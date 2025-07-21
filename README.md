@@ -1,15 +1,8 @@
-# PACKAGE RENAME
-
-This package was renamed to
-[gren-effectful-tests](https://github.com/blaix/gren-effectful-tests).
-
-Below is the README for the last version under the old name:
-
 # Gren Effectful Test Runner
 
 Run [Gren](https://gren-lang.org/) integration tests that depend on the actual results of [tasks](https://gren-lang.org/book/applications/tasks/).
 
-See the full API on [the package site](https://packages.gren-lang.org/package/blaix/gren-effectful-tests-node).
+See the full API on [the package site](https://packages.gren-lang.org/package/blaix/gren-effectful-tests).
 
 ## Quick Start
 
@@ -24,13 +17,13 @@ gren init --platform=node
 Install the package:
 
 ```sh
-gren package install blaix/gren-effectful-tests-node
+gren package install blaix/gren-effectful-tests
 ```
 
 Create a `src/Main.gren` with your tests.
 See the [examples below](#Examples),
-the working example [in the repo](https://github.com/blaix/gren-effectful-tests-node/blob/main/example/src/Main.gren),
-or [the package docs](https://packages.gren-lang.org/package/blaix/gren-effectful-tests-node)
+the working example [in the repo](https://github.com/blaix/gren-effectful-tests/blob/main/example/src/Main.gren),
+or [the package docs](https://packages.gren-lang.org/package/blaix/gren-effectful-tests)
 for how to do that.
 
 Then compile and run your tests:
@@ -149,6 +142,6 @@ catTestFile permission =
 ## Contact
 
 Found a problem? Need some help?
-You can [open an issue](https://github.com/blaix/gren-effectful-tests-node/issues),
+You can [open an issue](https://github.com/blaix/gren-effectful-tests/issues),
 find me [on mastodon](https://hachyderm.io/@blaix),
 or on the [Gren Discord](https://gren-lang.org/community).

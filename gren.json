@@ -1,8 +1,8 @@
 {
     "type": "package",
     "platform": "node",
-    "name": "blaix/gren-effectful-tests-node",
-    "summary": "Run Gren tests that can verify side effects",
+    "name": "blaix/gren-effectful-tests",
+    "summary": "Write Gren tests that can run tasks and verify side effects",
     "license": "BSD-3-Clause",
     "version": "5.0.1",
     "exposed-modules": [

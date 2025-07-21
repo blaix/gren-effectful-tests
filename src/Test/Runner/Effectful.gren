@@ -122,7 +122,7 @@ unwrap internalTest =
                     the code that I thought was unreachable. Congrats! But
                     also... sorry about that. It would be great if you could
                     open an issue so I can figure out how this happened:
-                    https://github.com/blaix/gren-effectful-tests-node/issues
+                    https://github.com/blaix/gren-effectful-tests/issues
                     Please include the test(s) that triggered this error.
                     """
 

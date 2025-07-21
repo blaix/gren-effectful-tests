@@ -1,3 +1,7 @@
+## 5.0.2 (2025-07-21)
+
+* Rename package to gren-effectful-tests
+
 ## 5.0.1 (2025-07-21)
 
 * Add note to readme about package rename.
