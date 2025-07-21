@@ -1,0 +1,78 @@
+module Main exposing (main)
+
+
+import Bytes
+import FileSystem
+import FileSystem.Path as Path
+import Fuzz exposing (array, int)
+import Expect
+import Init
+import Node
+import Task exposing (Task)
+import Test
+import Test.Runner.Effectful as Effectful exposing (..)
+import Terminal
+import Time
+
+
+readTestFile : FileSystem.Permission -> Task FileSystem.Error (Maybe String)
+readTestFile permission =
+    "./test.txt"
+        |> Path.fromPosixString
+        |> FileSystem.readFile permission
+        |> Task.map Bytes.toString
+
+
+main : Effectful.Program a
+main = 
+    Node.defineSimpleProgram <| \env ->
+        Init.await FileSystem.initialize <| \fsPerm ->
+        -- TODO: multiple inits
+        -- Init.await HttpClient.initialize <| \httpPerm ->
+            run env <|
+                concat
+                    [ await (readTestFile fsPerm) "reading file" <| \contents ->
+                        test "returns the contents" <| \_ ->
+                            Expect.equal (Just "some text\n") contents
+
+                    , describe "Nesting a describe"
+                        [ awaitError (Task.fail "failure") "Expected errors" <| \error ->
+                          await (Task.succeed "a") "nesting a" <| \a ->
+                          await (Task.succeed "b") "nesting b" <| \b ->
+                            test "nested tasks can be tested" <| \_ ->
+                                String.join " " [a, b, error ]
+                                    |> Expect.equal "a b failure"
+
+                        -- , todo "testing todo"
+                        -- , await (Task.fail "oops") "Unexpected error" <| \_ ->
+                        --     test "will fail the suite and skip the test" <| \_ ->
+                        --         Expect.equal True True
+                        -- , awaitError (Task.succeed "oops") "Unexpected success" <| \_ ->
+                        --     test "will fail the suite and skip the test" <| \_ ->
+                        --         Expect.equal True True
+                        
+                        , test "test that doesn't need a task" <| \_ ->
+                            Expect.equal True True
+
+                        , wrap <| Test.test "wrapping a core test" <| \_ ->
+                            Expect.equal True True
+
+                        , fuzz (array int) "Array.length should never be negative" <| \fuzzArray ->
+                            fuzzArray
+                                |> Array.length
+                                |> Expect.atLeast 0
+                                
+                        , fuzz2 (array int) (array int) "Two Array lengths should never be negative" <| \array1 array2 ->
+                            array1
+                                |> Array.append array2
+                                |> Array.length
+                                |> Expect.atLeast 0
+                                
+                        , fuzz3 (array int) (array int) (array int) "Three Array lengths should never be negative" <| \array1 array2 array3 ->
+                            array1
+                                |> Array.append array2
+                                |> Array.append array3
+                                |> Array.length
+                                |> Expect.atLeast 0
+                        ]
+                    ]

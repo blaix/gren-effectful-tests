@@ -1,0 +1,113 @@
+module Test.Runner.Log exposing (run)
+
+{-| Log Runner
+
+This will log the test results to the console, then exit with exit code 0
+if the tests all passed, and 1 if any failed.
+
+-}
+
+import Random
+import Test.Runner.String exposing (Summary)
+import String
+import Test exposing (Test)
+import Stream
+import Node
+import Task exposing (Task)
+import Bytes exposing (Bytes)
+
+
+type alias RunConfig =
+    { passStream : Stream.Writable Bytes
+    , failStream : Stream.Writable Bytes
+    , colorDepth : Int
+    , runs : Int
+    , seed : Random.Seed
+    , test : Test
+    }
+
+
+type Color
+    = NoColor
+    | Green
+    | Red
+
+
+run : RunConfig -> Task Never {}
+run { passStream, failStream, colorDepth, runs, seed, test } =
+    let
+        summary =
+            Test.Runner.String.runWithOptions runs seed test
+
+        output =
+            summarize summary colorDepth
+
+        { stream, exitCode } =
+            if summary.failed > 0 || summary.autoFail /= Nothing then
+                { stream = failStream
+                , exitCode = 1
+                }
+
+            else
+                { stream = passStream
+                , exitCode = 0
+                }
+    in
+    Stream.writeLineAsBytes output stream
+        |> Task.andThen (\_ -> Node.setExitCode exitCode)
+        |> Task.onError (\_ -> Node.setExitCode 1)
+ 
+
+summarize : Summary -> Int -> String
+summarize { output, passed, failed, autoFail } colorDepth =
+    let
+        headline =
+            if failed > 0 then
+                "TEST RUN FAILED"
+                    |> colorize colorDepth Red
+
+            else
+                when autoFail is
+                    Nothing ->
+                        "TEST RUN PASSED"
+                            |> colorize colorDepth Green
+
+                    Just reason ->
+                        "TEST RUN FAILED because " ++ reason
+                            |> colorize colorDepth Red
+    in
+    String.join "\n"
+        [ output
+        , headline ++ "\n"
+        , "Passed: " ++ String.fromInt passed
+        , "Failed: " ++ String.fromInt failed
+        ]
+
+
+colorize : Int -> Color -> String -> String
+colorize colorDepth color string =
+    if colorDepth > 1 then
+        String.join ""
+            [ setColor color
+            , string
+            , setColor NoColor
+            ]
+    else
+        string
+
+
+setColor : Color -> String
+setColor color =
+    String.join ""
+        [ "\u{001b}["
+        , colorCode color
+        , "m"
+        ]
+
+
+colorCode : Color -> String
+colorCode color =
+    when color is
+        NoColor -> "39"
+        Green -> "32"
+        Red -> "31"

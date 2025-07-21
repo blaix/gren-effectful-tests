@@ -1,0 +1,394 @@
+module Test.Runner.Effectful exposing 
+    ( Program
+
+    -- TESTS
+    , Test
+    , test
+    , wrap
+
+    -- TASKS
+    , await
+    , awaitError
+
+    -- RUN
+    , run
+    , runWithOptions
+    , Options
+
+    -- ORGANIZATION
+    , concat
+    , describe
+    , todo
+    , skip
+    , only
+    
+    -- FUZZ TESTING
+    , fuzz
+    , fuzz2
+    , fuzz3
+    )
+
+
+{-| A test runner that supports running Tasks.
+
+## Running Tests
+
+@docs run, runWithOptions, Options, Program
+
+## Awaiting Tasks
+
+@docs await, awaitError
+
+## Defining Tests
+
+@docs Test, test, wrap
+
+## Test Organization
+
+@docs concat, describe, todo, skip, only
+    
+## Fuzz Testing
+
+@docs fuzz, fuzz2, fuzz3
+
+-}
+
+import Expect exposing (Expectation)
+import Fuzz exposing (Fuzzer)
+import Init
+import Node 
+import Random
+import Task exposing (Task)
+import Terminal
+import Test
+import Test.Runner.Log as Log
+import Test.Runner.Node
+import Time
+
+
+{-| Type alias for a program that runs your effectful test suite.
+-}
+type alias Program a =
+    Node.SimpleProgram a
+
+
+-- TESTS
+
+
+{-| A test in an effectful test suite.
+
+They can be created with [test](#test), [fuzz](#fuzz), or several other functions in this module:
+    
+    import Expect
+    import Test.Runner.Effectful exposing (test)
+
+    test "my test" <| \_ ->
+        Expect.equal True True
+
+The semantics are the same as a test from the
+[core test package](https://packages.gren-lang.org/package/gren-lang/test/version/latest/module/Test#test),
+except they can wrapped in one or more [await](#await) or [awaitError](#awaitError) calls to verify the outcome a 
+[Task](https://packages.gren-lang.org/package/gren-lang/core/version/latest/module/Task):
+
+    import Expect
+    import Test.Runner.Effectful exposing (await, test)
+    import Time
+
+    await Time.now "The current time" <| \now ->
+        test "is not Jan 1, 1970" <| \_ ->
+            Expect.notEqual (Time.millisToPosix 0) now
+-}
+type alias Test =
+    Task Never (InternalTest {})
+
+
+type InternalTest a
+    = NotReady a
+    | Ready Test.Test
+
+
+unwrap : InternalTest {} -> Test.Test
+unwrap internalTest =
+    when internalTest is
+        Ready t ->
+            t
+        NotReady _ ->
+            -- This should never happen...
+            -- Any way to refactor it away?
+            Test.test "Unexpected error" <| \_ ->
+                Expect.fail
+                    """
+                    Oops! Something weird happened and you reached a point in
+                    the code that I thought was unreachable. Congrats! But
+                    also... sorry about that. It would be great if you could
+                    open an issue so I can figure out how this happened:
+                    https://github.com/blaix/gren-effectful-tests-node/issues
+                    Please include the test(s) that triggered this error.
+                    """
+
+
+{-| Create a [Test](#Test).
+-}
+test : String -> ({} -> Expectation) -> Test
+test description thunk =
+    Test.test description thunk
+        |> wrap
+
+
+{-| Wrap a test from the core test library.
+-}
+wrap : Test.Test -> Test
+wrap test_ =
+    test_
+        |> Ready
+        |> Task.succeed
+
+
+-- RESOLVING TASKS
+
+
+{-| Wait for a task to resolve before running a test.
+
+    await Time.now "Current time" <| \now ->
+        test "is not Jan 1, 1970" <| \_ ->
+            Expect.notEqual (Time.millisToPosix 0) now
+
+If the task fails, the inner test won't run and the test suite will fail.
+If you want to test the error condition of a task, use [awaitError](#awaitError).
+
+You can nest as many awaits as you want:
+
+    await (Task.succeed "a") "task a" <| \a ->
+    await (Task.succeed "b") "task b" <| \b ->
+        test "are not equal" <| \_ ->
+            Expect.notEqual a b
+-}
+await : Task error a -> String -> (a -> Test) -> Test
+await task description callback =
+    task
+        |> Task.map NotReady
+        |> Task.onError 
+            (\e -> 
+                (\_ -> Expect.fail (Debug.toString e))
+                    |> Test.test "Task failed with:"
+                    |> Ready
+                    |> Task.succeed
+            )
+        |> Task.andThen (map callback)
+        |> Task.andThen (wrapDescription description)
+
+
+{-| Test the error state of a task.
+
+    awaitError (Task.fail "oopsy") "An expected failure" <| \error ->
+        test "is an oopsy" \_ ->
+            Expect.equal "oopsy" error
+
+If the task does not fail, the inner test won't run and the test suite will fail.
+
+These can be nested just like (and alongside) [await](#await) calls.
+-}
+awaitError : Task error a -> String -> (error -> Test) -> Test
+awaitError task description callback =
+    task
+        |> Task.andThen 
+            (\a -> 
+                (\_ -> Expect.fail (Debug.toString a))
+                    |> Test.test "Expected error, but got a non-error value:"
+                    |> Ready
+                    |> Task.succeed
+            )
+        |> Task.onError callback
+        |> Task.andThen (wrapDescription description)
+
+
+map : (a -> Test) -> InternalTest a -> Test
+map fn internalTest =
+    when internalTest is
+        NotReady a ->
+            fn a
+        Ready t ->
+            Task.succeed (Ready t)
+
+
+wrapDescription : String -> InternalTest {} -> Test
+wrapDescription description internalTest =
+    internalTest
+        |> unwrap
+        |> Array.singleton
+        |> Test.describe description
+        |> Ready
+        |> Task.succeed
+
+
+-- RUNNING TESTS
+
+
+{-| Run your effectful test suite.
+
+The result of this function should be passed to 
+[Node.defineSimpleProgram](https://packages.gren-lang.org/package/gren-lang/node/version/latest/module/Node#defineSimpleProgram)
+as part of your `main` function:
+
+    main =
+        Node.defineSimpleProgram <|
+            run <|
+                await (Task.succeed "hi") "my task" <| \val ->
+                    test "says hi" <| \_ ->
+                        Expect.equal "hi" val
+
+-}
+run : Node.Environment -> Test -> Init.Task (Cmd a)
+run env t =
+    Init.awaitTask Time.now <| \time ->
+        let
+            options =
+                { runs = 100
+                , seed = Random.initialSeed (Time.posixToMillis time)
+                }
+        in
+        runWithOptions env options t
+
+
+{-| Customize a test run with [Options](#Options).
+-}
+runWithOptions : Node.Environment -> Options -> Test -> Init.Task (Cmd a)
+runWithOptions env options test_ =
+    Init.await Terminal.initialize <| \termConfig ->
+    Init.awaitTask test_ <| \t ->
+        Node.endSimpleProgram <|
+            Log.run
+                { test = unwrap t
+                , runs = options.runs
+                , passStream = env.stdout
+                , failStream = env.stderr
+                , colorDepth = getColorDepth termConfig 
+                , seed = options.seed
+                }
+
+
+{-| Options to customize your test run.
+
+* `runs`: how many times a [fuzz](#fuzz) test is run with different inputs.
+* `seed`: used to generate random input in [fuzz](#fuzz) tests. A test suite run with the same seed will generate the same fuzz values.
+-}
+type alias Options =
+    { runs : Int
+    , seed : Random.Seed
+    }
+
+
+-- TEST ORGANIZATION
+
+
+{-| Group an array of [Test](#Test)s into one.
+    
+    concat
+        [ test "true is true" <| \_ ->
+            Expect.equal True True
+        , test "false is false" <| \_ ->
+            Expect.equal False False
+        ]
+-}
+concat : Array Test -> Test
+concat tests =
+    tests
+        |> Array.map (Task.map unwrap)
+        |> Task.sequence
+        |> Task.map Test.concat
+        |> Task.map Ready
+
+
+{-| Group an array of [Test](#Test)s with a description.
+
+    describe "Truisms"
+        [ test "true is true" <| \_ ->
+            Expect.equal True True
+        , test "false is false" <| \_ ->
+            Expect.equal False False
+        ]
+-}
+describe : String -> Array Test -> Test
+describe description tests =
+    tests
+        |> Array.map (Task.map unwrap)
+        |> Task.sequence
+        |> Task.map (Test.describe description)
+        |> Task.map Ready
+
+
+{-| Create a [Test](#Test) that is a "TODO" (not yet implemented).
+
+The behavior and API mirrors [`todo` from the core test package](https://packages.gren-lang.org/package/gren-lang/test/version/latest/module/Test#todo).
+-}
+todo : String -> Test
+todo description =
+    Test.todo description
+        |> Ready
+        |> Task.succeed
+
+
+{-| Create a [Test](#Test) that gets skipped.
+
+The behavior and API mirrors [`skip` from the core test package](https://packages.gren-lang.org/package/gren-lang/test/version/latest/module/Test#skip).
+-}
+skip : Test -> Test
+skip =
+    Task.map (unwrap >> Test.skip >> Ready)
+
+
+{-| Create a [Test](#Test) that causes other tests to be skipped, and only runs the given one.
+
+The behavior and API mirrors [`only` from the core test package](https://packages.gren-lang.org/package/gren-lang/test/version/latest/module/Test#only).
+-}
+only : Test -> Test
+only =
+    Task.map (unwrap >> Test.only >> Ready)
+
+
+-- FUZZ TESTING
+
+
+{-| Create a "fuzz test".
+
+The behavior and API mirrors [`fuzz` from the core test package](https://packages.gren-lang.org/package/gren-lang/test/version/latest/module/Test#fuzz).
+-}
+fuzz : Fuzzer a -> String -> (a -> Expectation) -> Test
+fuzz fuzzer description thunk =
+    Test.fuzz fuzzer description thunk
+        |> Ready
+        |> Task.succeed
+
+
+{-| Create a "fuzz test" using two random inputs.
+
+The behavior and API mirrors [`fuzz2` from the core test package](https://packages.gren-lang.org/package/gren-lang/test/version/latest/module/Test#fuzz2).
+-}
+fuzz2 : Fuzzer a -> Fuzzer b -> String -> (a -> b -> Expectation) -> Test
+fuzz2 fuzzerA fuzzerB description thunk =
+    Test.fuzz2 fuzzerA fuzzerB description thunk
+        |> Ready
+        |> Task.succeed
+
+
+{-| Create a "fuzz test" using three random inputs.
+
+The behavior and API mirrors [`fuzz3` from the core test package](https://packages.gren-lang.org/package/gren-lang/test/version/latest/module/Test#fuzz3).
+-}
+fuzz3 : Fuzzer a -> Fuzzer b -> Fuzzer c -> String -> (a -> b -> c -> Expectation) -> Test
+fuzz3 fuzzerA fuzzerB fuzzerC description thunk =
+    Test.fuzz3 fuzzerA fuzzerB fuzzerC description thunk
+        |> Ready
+        |> Task.succeed
+
+
+-- UTIL
+
+
+getColorDepth : Maybe Terminal.Configuration -> Int
+getColorDepth config =
+    when config is
+        Just { colorDepth } ->
+            colorDepth
+        Nothing ->
+            1 -- lowest color depth (no colors)
