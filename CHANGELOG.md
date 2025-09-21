@@ -1,3 +1,7 @@
+## 6.0.0 (pending)
+
+* Swap arguments for await so description comes first (reads more like describe and easier to format long task chains)
+
 ## 5.0.3 (2025-08-18)
 
 * Rename package to gren-effectful-tests

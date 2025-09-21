@@ -94,7 +94,7 @@ except they can wrapped in one or more [await](#await) or [awaitError](#awaitErr
     import Test.Runner.Effectful exposing (await, test)
     import Time
 
-    await Time.now "The current time" <| \now ->
+    await "The current time" Time.now <| \now ->
         test "is not Jan 1, 1970" <| \_ ->
             Expect.notEqual (Time.millisToPosix 0) now
 -}
@@ -149,7 +149,7 @@ wrap test_ =
 
 {-| Wait for a task to resolve before running a test.
 
-    await Time.now "Current time" <| \now ->
+    await "Current time" Time.now <| \now ->
         test "is not Jan 1, 1970" <| \_ ->
             Expect.notEqual (Time.millisToPosix 0) now
 
@@ -158,13 +158,13 @@ If you want to test the error condition of a task, use [awaitError](#awaitError)
 
 You can nest as many awaits as you want:
 
-    await (Task.succeed "a") "task a" <| \a ->
-    await (Task.succeed "b") "task b" <| \b ->
+    await "task a" (Task.succeed "a") <| \a ->
+    await "task b" (Task.succeed "b") <| \b ->
         test "are not equal" <| \_ ->
             Expect.notEqual a b
 -}
-await : Task error a -> String -> (a -> Test) -> Test
-await task description callback =
+await : String -> Task error a -> (a -> Test) -> Test
+await description task callback =
     task
         |> Task.map NotReady
         |> Task.onError 
@@ -180,7 +180,7 @@ await task description callback =
 
 {-| Test the error state of a task.
 
-    awaitError (Task.fail "oopsy") "An expected failure" <| \error ->
+    awaitError "An expected failure" (Task.fail "oopsy") <| \error ->
         test "is an oopsy" \_ ->
             Expect.equal "oopsy" error
 
@@ -188,8 +188,8 @@ If the task does not fail, the inner test won't run and the test suite will fail
 
 These can be nested just like (and alongside) [await](#await) calls.
 -}
-awaitError : Task error a -> String -> (error -> Test) -> Test
-awaitError task description callback =
+awaitError : String -> Task error a -> (error -> Test) -> Test
+awaitError description task callback =
     task
         |> Task.andThen 
             (\a -> 
@@ -233,7 +233,7 @@ as part of your `main` function:
     main =
         Node.defineSimpleProgram <|
             run <|
-                await (Task.succeed "hi") "my task" <| \val ->
+                await "my task" (Task.succeed "hi") <| \val ->
                     test "says hi" <| \_ ->
                         Expect.equal "hi" val
 

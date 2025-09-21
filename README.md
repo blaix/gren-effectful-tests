@@ -56,7 +56,7 @@ main : Effectful.Program a
 main = 
     Node.defineSimpleProgram <| \env ->
         run env <|
-            await Time.now "the current time" <| \now ->
+            await "the current time" Time.now <| \now ->
                 test "is not Jan 1, 1970" <| \_ ->
                     Expect.notEqual (Time.millisToPosix 0) now
 ```
@@ -75,7 +75,7 @@ main : Effectful.Program a
 main = 
     Node.defineSimpleProgram <| \env ->
         run env <|
-            awaitError (Task.fail "oopsy") "expected failure" <| \error ->
+            awaitError "expected failure" (Task.fail "oopsy") <| \error ->
                 test "is an oopsy" <| \_ ->
                     Expect.equal "oopsy" error
 ```
@@ -86,9 +86,9 @@ You can nest awaits as deep as you need:
 
 ```elm
 run env <|
-    await (Task.succeed "a") "task a" <| \a ->
-    await (Task.succeed "b") "task b" <| \b ->
-    awaitError (Task.fail "failure") "failed task" <| \error ->
+    await "task a" (Task.succeed "a") <| \a ->
+    await "task b" (Task.succeed "b") <| \b ->
+    awaitError "failed task" (Task.fail "failure") <| \error ->
         test "nested tasks" <| \_ ->
             Expect.equalArrays
                 [ "a", "b", "error" ]
@@ -115,10 +115,10 @@ main =
         Init.await ChildProcess.initialize <| \processPerm ->
             run env <|
                 describe "my effectful tests"
-                    [ await (readTestFile fsPerm) "reading test.txt" <| \contents ->
+                    [ await "reading test.txt" (readTestFile fsPerm) <| \contents ->
                         test "resolves to contents of file" <| \_ ->
                             Expect.equal (Just "some text\n") content
-                    , await (catTestFile processPerm) "cat test.txt" <| \contents ->
+                    , await "cat test.txt" (catTestFile processPerm) <| \contents ->
                         test "also resolves to contents of file" <| \_ ->
                             Expect.equal (Just "some text\n") content
                     ]

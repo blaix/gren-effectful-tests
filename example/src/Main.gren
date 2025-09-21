@@ -31,23 +31,23 @@ main =
         -- Init.await HttpClient.initialize <| \httpPerm ->
             run env <|
                 concat
-                    [ await (readTestFile fsPerm) "reading file" <| \contents ->
+                    [ await "reading file" (readTestFile fsPerm) <| \contents ->
                         test "returns the contents" <| \_ ->
                             Expect.equal (Just "some text\n") contents
 
                     , describe "Nesting a describe"
-                        [ awaitError (Task.fail "failure") "Expected errors" <| \error ->
-                          await (Task.succeed "a") "nesting a" <| \a ->
-                          await (Task.succeed "b") "nesting b" <| \b ->
+                        [ awaitError "Expected errors" (Task.fail "failure") <| \error ->
+                          await "nesting a" (Task.succeed "a") <| \a ->
+                          await "nesting b" (Task.succeed "b") <| \b ->
                             test "nested tasks can be tested" <| \_ ->
                                 String.join " " [a, b, error ]
                                     |> Expect.equal "a b failure"
 
                         -- , todo "testing todo"
-                        -- , await (Task.fail "oops") "Unexpected error" <| \_ ->
+                        -- , await "Unexpected error" (Task.fail "oops") <| \_ ->
                         --     test "will fail the suite and skip the test" <| \_ ->
                         --         Expect.equal True True
-                        -- , awaitError (Task.succeed "oops") "Unexpected success" <| \_ ->
+                        -- , awaitError "Unexpected success" (Task.succeed "oops") <| \_ ->
                         --     test "will fail the suite and skip the test" <| \_ ->
                         --         Expect.equal True True
                         
