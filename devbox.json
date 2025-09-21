@@ -1,18 +1,15 @@
 {
   "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.13.6/.schema/devbox.schema.json",
   "packages": [
-    "github:gren-lang/nix/0.6.0",
+    "github:gren-lang/nix/0.6.3",
     "nodejs@20",
     "entr@latest",
     "just@latest"
   ],
   "shell": {
-    "init_hook": [
-      "echo 'Welcome to devbox!' > /dev/null"
-    ],
     "scripts": {
       "test": [
-        "cd example && gren make src/Main.gren && node app"
+        "cd example && gren run Main"
       ],
       "all": [
         "gren make && devbox run test && gren docs"
