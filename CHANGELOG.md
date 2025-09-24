@@ -1,4 +1,4 @@
-## 6.0.0 (pending)
+## 6.0.0 (2025-09-23)
 
 * Swap arguments for await so description comes first (reads more like describe and easier to format long task chains)
 

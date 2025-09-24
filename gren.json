@@ -4,7 +4,7 @@
     "name": "blaix/gren-effectful-tests",
     "summary": "Write Gren tests that can run tasks and verify side effects",
     "license": "BSD-3-Clause",
-    "version": "5.0.3",
+    "version": "6.0.0",
     "exposed-modules": [
         "Test.Runner.Effectful"
     ],
