@@ -91,7 +91,7 @@ run env <|
     awaitError "failed task" (Task.fail "failure") <| \error ->
         test "nested tasks" <| \_ ->
             Expect.equalArrays
-                [ "a", "b", "error" ]
+                [ "a", "b", "failure" ]
                 [ a, b, error ]
 ```
 
