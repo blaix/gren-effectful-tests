@@ -231,8 +231,8 @@ The result of this function should be passed to
 as part of your `main` function:
 
     main =
-        Node.defineSimpleProgram <|
-            run <|
+        Node.defineSimpleProgram <| \env ->
+            run env <|
                 await "my task" (Task.succeed "hi") <| \val ->
                     test "says hi" <| \_ ->
                         Expect.equal "hi" val
