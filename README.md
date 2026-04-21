@@ -26,11 +26,10 @@ the working example [in the repo](https://github.com/blaix/gren-effectful-tests/
 or [the package docs](https://packages.gren-lang.org/package/blaix/gren-effectful-tests)
 for how to do that.
 
-Then compile and run your tests:
+Then run your tests:
 
 ```
-gren make src/Main.gren
-node app
+gren run Main
 ```
 
 ## Examples
@@ -47,15 +46,17 @@ Plus additional functions like `await` that let you resolve tasks.
 A basic test that awaits a task:
 
 ```elm
+module Main exposing (..)
+
 import Expect
 import Node
-import Test.Runner.Effectful exposing (run, test, await)
+import Test.Runner.Effectful as Effectful exposing (test, await)
 import Time
 
 main : Effectful.Program a
 main = 
     Node.defineSimpleProgram <| \env ->
-        run env <|
+        Effectful.run env <|
             await "the current time" Time.now <| \now ->
                 test "is not Jan 1, 1970" <| \_ ->
                     Expect.notEqual (Time.millisToPosix 0) now
@@ -68,13 +69,15 @@ If you try to await a task that fails, the test run will fail.
 If you want to explicitly test the failure condition, use `awaitError`:
 
 ```elm
+module Main exposing (..)
+
 import Expect
-import Test.Runner.Effectful exposing (run, test, awaitError)
+import Test.Runner.Effectful as Effectful exposing (test, awaitError)
 
 main : Effectful.Program a
 main = 
     Node.defineSimpleProgram <| \env ->
-        run env <|
+        Effectful.run env <|
             awaitError "expected failure" (Task.fail "oopsy") <| \error ->
                 test "is an oopsy" <| \_ ->
                     Expect.equal "oopsy" error
@@ -85,7 +88,7 @@ main =
 You can nest awaits as deep as you need:
 
 ```elm
-run env <|
+Effectful.run env <|
     await "task a" (Task.succeed "a") <| \a ->
     await "task b" (Task.succeed "b") <| \b ->
     awaitError "failed task" (Task.fail "failure") <| \error ->
@@ -102,18 +105,19 @@ Because your runner is a normal gren node program, you have access to
 if you need them:
 
 ```elm
+module Main exposing (..)
+
 import Bytes
 import Expect
 import FileSystem
-import Test.Runner.Effectful exposing (run, describe, test, await)
-
+import Test.Runner.Effectful as Effectful exposing (describe, test, await)
 
 main : Effectful.Program a
 main = 
     Node.defineSimpleProgram <| \env ->
         Init.await FileSystem.initialize <| \fsPerm->
         Init.await ChildProcess.initialize <| \processPerm ->
-            run env <|
+            Effectful.run env <|
                 describe "my effectful tests"
                     [ await "reading test.txt" (readTestFile fsPerm) <| \contents ->
                         test "resolves to contents of file" <| \_ ->
