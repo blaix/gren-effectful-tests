@@ -1,0 +1,562 @@
+module Test.Runner.Mobile exposing
+    ( Session
+    , Element
+    , Error(..)
+    , Options
+    , Permissions
+    , Platform(..)
+    , IOSConfig
+    , AndroidConfig
+    , options
+    , initialize
+    , setPort
+    , withSession
+    , findElement
+    , findElements
+    , click
+    , sendKeys
+    , clear
+    , getText
+    , getAttribute
+    , Screenshot
+    , screenshot
+    , elementScreenshot
+    )
+
+
+{-| A test runner for native mobile app testing via Appium (W3C WebDriver protocol).
+
+This module provides `withSession` to create composable mobile tests within an
+`Effectful.run` call.
+
+## Prerequisites
+
+1. Install Appium: `npm install -g appium`
+2. Install the driver for your platform:
+    - iOS: `appium driver install xcuitest`
+    - Android: `appium driver install uiautomator2`
+3. Boot a simulator (iOS) or emulator (Android) and install your app
+   (e.g. by running it from Xcode or Android Studio)
+4. Use `bundleId` (iOS) or `appPackage`/`appActivity` (Android) to connect
+   to the already-installed app
+
+## Example
+
+    import Test.Runner.Mobile as Mobile
+    import Test.Runner.Effectful as Effectful exposing (..)
+
+    main =
+        Node.defineSimpleProgram <| \env ->
+            Effectful.initialize env <| \config ->
+            Mobile.initialize <| \mobilePerms ->
+                Node.endSimpleProgram (Effectful.run config <|
+                    Mobile.withSession mobilePerms
+                        (Mobile.IOS
+                            { bundleId = "com.example.MyApp"
+                            , deviceName = "iPhone 15"
+                            }
+                        )
+                        Mobile.options
+                    <| \session ->
+                        describe "App tests"
+                            [ await "find login" (Mobile.findElement "login-button" session) <| \btn ->
+                              await "tap login" (Mobile.click btn session) <| \_ ->
+                                test "navigated to login" <| \_ ->
+                                    Expect.pass
+                            ]
+                )
+
+## Permissions
+
+@docs Permissions, initialize
+
+## Running Mobile Tests
+
+@docs withSession, Options, options, setPort, Platform, IOSConfig, AndroidConfig, Session
+
+## Finding Elements
+
+@docs findElement, findElements, Element
+
+## Element Interaction
+
+@docs click, sendKeys, clear, getText, getAttribute
+
+## Screenshots
+
+@docs screenshot, elementScreenshot, Screenshot
+
+## Errors
+
+@docs Error
+
+-}
+
+import ChildProcess
+import Expect
+import FileSystem
+import FileSystem.Path as Path
+import HttpClient
+import Init
+import Json.Decode as Decode
+import Json.Encode as Encode
+import Node
+import Process
+import Task exposing (Task)
+import Test.Runner.Effectful as Effectful
+import Test.Runner.WebDriver as WebDriver
+
+
+-- TYPES
+
+
+{-| Subsystem permissions needed for mobile testing. This is a transparent
+record so you can create one manually if you want fine-grained control:
+
+    { httpPerm = httpPerm
+    , cpPerm = cpPerm
+    , fsPerm = fsPerm
+    }
+
+Or use [initialize](#initialize) for a convenient way to get one.
+-}
+type alias Permissions =
+    { httpPerm : HttpClient.Permission
+    , cpPerm : ChildProcess.Permission
+    , fsPerm : FileSystem.Permission
+    }
+
+
+{-| An Appium mobile session. Pass this to mobile interaction functions.
+-}
+type Session
+    = Session
+        { connection : WebDriver.Connection
+        , fsPerm : FileSystem.Permission
+        , processId : Process.Id
+        }
+
+
+{-| A reference to a UI element found via `findElement` or `findElements`.
+-}
+type Element
+    = Element String
+
+
+{-| A screenshot captured from the device. Created by `screenshot` or
+`elementScreenshot`.
+-}
+type Screenshot
+    = Screenshot Path.Path
+
+
+{-| Errors that can occur during mobile interaction.
+-}
+type Error
+    = AppiumError String
+    | HttpError String
+    | FileSystemError String
+
+
+{-| The mobile platform to test on.
+-}
+type Platform
+    = IOS IOSConfig
+    | Android AndroidConfig
+
+
+{-| Configuration for connecting to an iOS app on a simulator.
+
+- `bundleId`: The app's bundle identifier (e.g. `"com.example.MyApp"`)
+- `deviceName`: The simulator name (e.g. `"iPhone 15"`)
+
+-}
+type alias IOSConfig =
+    { bundleId : String
+    , deviceName : String
+    }
+
+
+{-| Configuration for connecting to an Android app on an emulator.
+
+- `appPackage`: The app's package name (e.g. `"com.example.myapp"`)
+- `appActivity`: The app's main activity (e.g. `".MainActivity"`)
+- `deviceName`: The emulator name (e.g. `"Pixel_7_API_34"`)
+
+-}
+type alias AndroidConfig =
+    { appPackage : String
+    , appActivity : String
+    , deviceName : String
+    }
+
+
+{-| Options for configuring the mobile test runner. Create with `options` and
+customize with `setPort`.
+-}
+type Options
+    = Options { port_ : Int }
+
+
+{-| Default options: Appium on port 4723.
+-}
+options : Options
+options =
+    Options { port_ = 4723 }
+
+
+{-| Set the Appium port (default: 4723).
+-}
+setPort : Int -> Options -> Options
+setPort port_ (Options opts) =
+    Options { opts | port_ = port_ }
+
+
+-- INITIALIZE
+
+
+{-| A convenience function that acquires HttpClient, ChildProcess, and
+FileSystem permissions.
+
+**Note:** This gives unlimited subsystem permissions to the package.
+If you want more control, create your own `Permissions` record instead.
+
+    main =
+        Node.defineSimpleProgram <| \env ->
+            Effectful.initialize env <| \config ->
+            Mobile.initialize <| \mobilePerms ->
+                Node.endSimpleProgram (Effectful.run config <|
+                    Mobile.withSession mobilePerms
+                        (Mobile.IOS { bundleId = "com.example.MyApp", deviceName = "iPhone 15" })
+                        Mobile.options
+                    <| \session ->
+                        myMobileTests session
+                )
+
+-}
+initialize : (Permissions -> Init.Task a) -> Init.Task a
+initialize callback =
+    Init.await HttpClient.initialize <| \httpPerm ->
+    Init.await ChildProcess.initialize <| \cpPerm ->
+    Init.await FileSystem.initialize <| \fsPerm ->
+        callback { httpPerm = httpPerm, cpPerm = cpPerm, fsPerm = fsPerm }
+
+
+-- RUNNER
+
+
+{-| Create a composable mobile test within an `Effectful.run` call. It:
+
+1. Starts Appium
+2. Creates a session connected to your app on the simulator/emulator
+3. Passes the session to your callback
+4. Automatically cleans up the session and Appium
+
+Example:
+
+    Mobile.withSession mobilePerms
+        (Mobile.IOS
+            { bundleId = "com.example.MyApp"
+            , deviceName = "iPhone 15"
+            }
+        )
+        Mobile.options
+    <| \session ->
+        describe "App tests"
+            [ await "find button" (Mobile.findElement "my-button" session) <| \btn ->
+              await "tap button" (Mobile.click btn session) <| \_ ->
+                test "button was tapped" <| \_ ->
+                    Expect.pass
+            ]
+
+-}
+withSession : Permissions -> Platform -> Options -> (Session -> Effectful.Test) -> Effectful.Test
+withSession perms platform opts callback =
+    startSession perms platform opts
+        |> Task.andThen (\result ->
+            when result is
+                Err error ->
+                    Effectful.test "Mobile session" <| \_ ->
+                        Expect.fail (errorToString error)
+
+                Ok session ->
+                    callback session
+                        |> Task.andThen (\t ->
+                            cleanupSession session
+                                |> Task.map (\_ -> t)
+                        )
+        )
+
+
+-- SESSION LIFECYCLE
+
+
+startSession : Permissions -> Platform -> Options -> Task Never (Result Error Session)
+startSession perms platform (Options opts) =
+    let
+        portStr =
+            String.fromInt opts.port_
+
+        baseUrl =
+            "http://localhost:" ++ portStr
+    in
+    ChildProcess.run perms.cpPerm "appium" [ "--version" ] ChildProcess.defaultRunOptions
+        |> Task.andThen
+            (\_ ->
+                Process.spawn
+                    (ChildProcess.run perms.cpPerm "appium" [ "--port", portStr ] ChildProcess.defaultRunOptions)
+                    |> Task.andThen
+                        (\processId ->
+                            WebDriver.pollForReady perms.httpPerm baseUrl 50
+                                |> Task.mapError AppiumError
+                                |> Task.andThen (\_ -> createAppiumSession perms.httpPerm baseUrl platform)
+                                |> Task.map
+                                    (\sessionId ->
+                                        Session
+                                            { connection =
+                                                { sessionId = sessionId
+                                                , httpPerm = perms.httpPerm
+                                                , baseUrl = baseUrl
+                                                }
+                                            , fsPerm = perms.fsPerm
+                                            , processId = processId
+                                            }
+                                    )
+                                |> Task.onError
+                                    (\error ->
+                                        Process.kill processId
+                                            |> Task.andThen (\_ -> Task.fail error)
+                                    )
+                        )
+                    |> Task.map Ok
+                    |> Task.onError (\error -> Task.succeed (Err error))
+            )
+        |> Task.onError
+            (\failedRun ->
+                when failedRun is
+                    ChildProcess.InitError _ ->
+                        Task.succeed (Err appiumNotFound)
+
+                    ChildProcess.ProgramError { exitCode } ->
+                        if exitCode == 127 then
+                            Task.succeed (Err appiumNotFound)
+
+                        else
+                            Task.succeed
+                                (Err
+                                    (AppiumError
+                                        ("appium exited with code " ++ String.fromInt exitCode)
+                                    )
+                                )
+            )
+
+
+createAppiumSession : HttpClient.Permission -> String -> Platform -> Task Error String
+createAppiumSession httpPerm baseUrl platform =
+    let
+        capabilities =
+            when platform is
+                IOS config ->
+                    Encode.object
+                        [ { key = "platformName", value = Encode.string "iOS" }
+                        , { key = "appium:automationName", value = Encode.string "XCUITest" }
+                        , { key = "appium:bundleId", value = Encode.string config.bundleId }
+                        , { key = "appium:deviceName", value = Encode.string config.deviceName }
+                        ]
+
+                Android config ->
+                    Encode.object
+                        [ { key = "platformName", value = Encode.string "Android" }
+                        , { key = "appium:automationName", value = Encode.string "UiAutomator2" }
+                        , { key = "appium:appPackage", value = Encode.string config.appPackage }
+                        , { key = "appium:appActivity", value = Encode.string config.appActivity }
+                        , { key = "appium:deviceName", value = Encode.string config.deviceName }
+                        ]
+
+        body =
+            Encode.object
+                [ { key = "capabilities"
+                  , value =
+                        Encode.object
+                            [ { key = "alwaysMatch"
+                              , value = capabilities
+                              }
+                            ]
+                  }
+                ]
+    in
+    HttpClient.post (baseUrl ++ "/session")
+        |> HttpClient.withJsonBody body
+        |> HttpClient.expectJson sessionIdDecoder
+        |> HttpClient.send httpPerm
+        |> Task.map .data
+        |> Task.mapError httpErrorToError
+
+
+sessionIdDecoder : Decode.Decoder String
+sessionIdDecoder =
+    Decode.field "value" (Decode.field "sessionId" Decode.string)
+
+
+cleanupSession : Session -> Task Never {}
+cleanupSession (Session { connection, processId }) =
+    WebDriver.deleteSession connection
+        |> Task.andThen (\_ -> Process.kill processId)
+
+
+-- FINDING ELEMENTS
+
+
+{-| Find a single element by accessibility id.
+
+The accessibility id maps to:
+
+- iOS: the `accessibilityIdentifier` property
+- Android: the `content-description` attribute or `resource-id`
+
+-}
+findElement : String -> Session -> Task Error Element
+findElement accessibilityId (Session { connection }) =
+    WebDriver.webDriverPostQuery "/element"
+        (Encode.object
+            [ { key = "using", value = Encode.string "accessibility id" }
+            , { key = "value", value = Encode.string accessibilityId }
+            ]
+        )
+        (Decode.map Element WebDriver.elementIdDecoder)
+        connection
+        |> Task.mapError httpErrorToError
+
+
+{-| Find all elements matching an accessibility id.
+
+The accessibility id maps to:
+
+- iOS: the `accessibilityIdentifier` property
+- Android: the `content-description` attribute or `resource-id`
+
+-}
+findElements : String -> Session -> Task Error (Array Element)
+findElements accessibilityId (Session { connection }) =
+    WebDriver.webDriverPostQuery "/elements"
+        (Encode.object
+            [ { key = "using", value = Encode.string "accessibility id" }
+            , { key = "value", value = Encode.string accessibilityId }
+            ]
+        )
+        (Decode.array (Decode.map Element WebDriver.elementIdDecoder))
+        connection
+        |> Task.mapError httpErrorToError
+
+
+-- ELEMENT INTERACTION
+
+
+{-| Tap an element.
+-}
+click : Element -> Session -> Task Error {}
+click (Element elementId) (Session { connection }) =
+    WebDriver.webDriverCommand ("/element/" ++ elementId ++ "/click")
+        (Encode.object [])
+        connection
+        |> Task.mapError httpErrorToError
+
+
+{-| Send keystrokes to an element. Use `Test.Runner.Key` for special
+keys like Enter, Escape, Backspace, etc.
+
+    import Test.Runner.Key as Key
+
+    -- Type text then press Enter:
+    Mobile.sendKeys ("hello" ++ Key.enter) input session
+
+-}
+sendKeys : String -> Element -> Session -> Task Error {}
+sendKeys text (Element elementId) (Session { connection }) =
+    WebDriver.webDriverCommand ("/element/" ++ elementId ++ "/value")
+        (Encode.object [ { key = "text", value = Encode.string text } ])
+        connection
+        |> Task.mapError httpErrorToError
+
+
+{-| Clear the contents of an input element.
+-}
+clear : Element -> Session -> Task Error {}
+clear (Element elementId) (Session { connection }) =
+    WebDriver.webDriverCommand ("/element/" ++ elementId ++ "/clear")
+        (Encode.object [])
+        connection
+        |> Task.mapError httpErrorToError
+
+
+{-| Get the visible text of an element.
+-}
+getText : Element -> Session -> Task Error String
+getText (Element elementId) (Session { connection }) =
+    WebDriver.webDriverQuery ("/element/" ++ elementId ++ "/text") Decode.string connection
+        |> Task.mapError httpErrorToError
+
+
+{-| Get an attribute value of an element.
+-}
+getAttribute : String -> Element -> Session -> Task Error String
+getAttribute name (Element elementId) (Session { connection }) =
+    WebDriver.webDriverQuery ("/element/" ++ elementId ++ "/attribute/" ++ name) Decode.string connection
+        |> Task.mapError httpErrorToError
+
+
+-- SCREENSHOTS
+
+
+{-| Capture a screenshot of the device screen and save it to the given path.
+-}
+screenshot : Path.Path -> Session -> Task Error Screenshot
+screenshot path (Session { connection, fsPerm }) =
+    WebDriver.webDriverQuery "/screenshot" Decode.string connection
+        |> Task.mapError httpErrorToError
+        |> Task.andThen
+            (\base64String ->
+                WebDriver.decodeAndSaveScreenshot fsPerm path base64String
+                    |> Task.map Screenshot
+                    |> Task.mapError AppiumError
+            )
+
+
+{-| Capture a screenshot of a specific element and save it to the given path.
+-}
+elementScreenshot : Element -> Path.Path -> Session -> Task Error Screenshot
+elementScreenshot (Element elementId) path (Session { connection, fsPerm }) =
+    WebDriver.webDriverQuery ("/element/" ++ elementId ++ "/screenshot") Decode.string connection
+        |> Task.mapError httpErrorToError
+        |> Task.andThen
+            (\base64String ->
+                WebDriver.decodeAndSaveScreenshot fsPerm path base64String
+                    |> Task.map Screenshot
+                    |> Task.mapError AppiumError
+            )
+
+
+-- HELPERS
+
+
+errorToString : Error -> String
+errorToString error =
+    when error is
+        AppiumError message ->
+            "Appium error: " ++ message
+
+        HttpError message ->
+            "HTTP error: " ++ message
+
+        FileSystemError message ->
+            "File system error: " ++ message
+
+
+appiumNotFound : Error
+appiumNotFound =
+    AppiumError "appium not found. Install it with: npm install -g appium"
+
+
+httpErrorToError : HttpClient.Error -> Error
+httpErrorToError error =
+    HttpError (HttpClient.errorToString error)
