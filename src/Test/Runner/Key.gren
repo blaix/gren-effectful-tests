@@ -1,0 +1,520 @@
+module Test.Runner.Key exposing
+    ( -- MODIFIER KEYS
+      shift
+    , control
+    , alt
+    , meta
+    , null
+
+    -- CONTROL KEYS
+    , cancel
+    , help
+    , backspace
+    , tab
+    , clear
+    , return_
+    , enter
+    , pause
+    , escape
+    , space
+
+    -- NAVIGATION KEYS
+    , pageUp
+    , pageDown
+    , end
+    , home
+    , arrowLeft
+    , arrowUp
+    , arrowRight
+    , arrowDown
+    , insert
+    , delete
+
+    -- NUMPAD KEYS
+    , numpad0
+    , numpad1
+    , numpad2
+    , numpad3
+    , numpad4
+    , numpad5
+    , numpad6
+    , numpad7
+    , numpad8
+    , numpad9
+    , multiply
+    , add
+    , separator
+    , subtract
+    , decimal
+    , divide
+
+    -- FUNCTION KEYS
+    , f1
+    , f2
+    , f3
+    , f4
+    , f5
+    , f6
+    , f7
+    , f8
+    , f9
+    , f10
+    , f11
+    , f12
+
+    -- PUNCTUATION KEYS
+    , semicolon
+    , equals
+    )
+
+
+{-| W3C WebDriver special key constants for use with `Browser.sendKeys`.
+
+    -- Press Enter on an element:
+    Browser.sendKeys Key.enter element session
+
+    -- Type text then press Enter:
+    Browser.sendKeys ("hello" ++ Key.enter) element session
+
+## Modifier Keys
+
+The modifier keys (`shift`, `control`, `alt`, `meta`) behave differently from
+all other keys. They are "sticky" — when sent, they stay held down and apply to
+all subsequent characters until released by sending [`null`](#null).
+
+    -- Type "HELlo" (shift held for first 3 chars, then released):
+    Browser.sendKeys (Key.shift ++ "hel" ++ Key.null ++ "lo") element session
+
+All other keys (like `enter`, `backspace`, `tab`, etc.) fire as a normal
+key press and release. They do not stay held down.
+
+@docs shift, control, alt, meta, null
+
+## Control Keys
+
+@docs cancel, help, backspace, tab, clear, return_, enter, pause, escape, space
+
+## Navigation Keys
+
+@docs pageUp, pageDown, end, home, arrowLeft, arrowUp, arrowRight, arrowDown, insert, delete
+
+## Numpad Keys
+
+@docs numpad0, numpad1, numpad2, numpad3, numpad4, numpad5, numpad6, numpad7, numpad8, numpad9, multiply, add, separator, subtract, decimal, divide
+
+## Function Keys
+
+@docs f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12
+
+## Punctuation Keys
+
+@docs semicolon, equals
+
+-}
+
+
+-- MODIFIER KEYS
+
+
+{-| Shift key (U+E008). This is a modifier key — it stays held down until
+released by [`null`](#null).
+-}
+shift : String
+shift =
+    "\u{E008}"
+
+
+{-| Control key (U+E009). This is a modifier key — it stays held down until
+released by [`null`](#null).
+-}
+control : String
+control =
+    "\u{E009}"
+
+
+{-| Alt key (U+E00A). This is a modifier key — it stays held down until
+released by [`null`](#null).
+-}
+alt : String
+alt =
+    "\u{E00A}"
+
+
+{-| Meta key, also known as Command on macOS (U+E03D). This is a modifier
+key — it stays held down until released by [`null`](#null).
+-}
+meta : String
+meta =
+    "\u{E03D}"
+
+
+{-| Null key (U+E000). Releases all held modifier keys (`shift`, `control`, etc).
+-}
+null : String
+null =
+    "\u{E000}"
+
+
+-- CONTROL KEYS
+
+
+{-| Cancel key (U+E001).
+-}
+cancel : String
+cancel =
+    "\u{E001}"
+
+
+{-| Help key (U+E002).
+-}
+help : String
+help =
+    "\u{E002}"
+
+
+{-| Backspace key (U+E003).
+-}
+backspace : String
+backspace =
+    "\u{E003}"
+
+
+{-| Tab key (U+E004).
+-}
+tab : String
+tab =
+    "\u{E004}"
+
+
+{-| Clear key (U+E005).
+-}
+clear : String
+clear =
+    "\u{E005}"
+
+
+{-| Return key (U+E006).
+-}
+return_ : String
+return_ =
+    "\u{E006}"
+
+
+{-| Enter key (U+E007).
+-}
+enter : String
+enter =
+    "\u{E007}"
+
+
+{-| Pause key (U+E00B).
+-}
+pause : String
+pause =
+    "\u{E00B}"
+
+
+{-| Escape key (U+E00C).
+-}
+escape : String
+escape =
+    "\u{E00C}"
+
+
+{-| Space key (U+E00D).
+-}
+space : String
+space =
+    "\u{E00D}"
+
+
+-- NAVIGATION KEYS
+
+
+{-| Page Up key (U+E00E).
+-}
+pageUp : String
+pageUp =
+    "\u{E00E}"
+
+
+{-| Page Down key (U+E00F).
+-}
+pageDown : String
+pageDown =
+    "\u{E00F}"
+
+
+{-| End key (U+E010).
+-}
+end : String
+end =
+    "\u{E010}"
+
+
+{-| Home key (U+E011).
+-}
+home : String
+home =
+    "\u{E011}"
+
+
+{-| Left arrow key (U+E012).
+-}
+arrowLeft : String
+arrowLeft =
+    "\u{E012}"
+
+
+{-| Up arrow key (U+E013).
+-}
+arrowUp : String
+arrowUp =
+    "\u{E013}"
+
+
+{-| Right arrow key (U+E014).
+-}
+arrowRight : String
+arrowRight =
+    "\u{E014}"
+
+
+{-| Down arrow key (U+E015).
+-}
+arrowDown : String
+arrowDown =
+    "\u{E015}"
+
+
+{-| Insert key (U+E016).
+-}
+insert : String
+insert =
+    "\u{E016}"
+
+
+{-| Delete key (U+E017).
+-}
+delete : String
+delete =
+    "\u{E017}"
+
+
+-- NUMPAD KEYS
+
+
+{-| Numpad 0 key (U+E01A).
+-}
+numpad0 : String
+numpad0 =
+    "\u{E01A}"
+
+
+{-| Numpad 1 key (U+E01B).
+-}
+numpad1 : String
+numpad1 =
+    "\u{E01B}"
+
+
+{-| Numpad 2 key (U+E01C).
+-}
+numpad2 : String
+numpad2 =
+    "\u{E01C}"
+
+
+{-| Numpad 3 key (U+E01D).
+-}
+numpad3 : String
+numpad3 =
+    "\u{E01D}"
+
+
+{-| Numpad 4 key (U+E01E).
+-}
+numpad4 : String
+numpad4 =
+    "\u{E01E}"
+
+
+{-| Numpad 5 key (U+E01F).
+-}
+numpad5 : String
+numpad5 =
+    "\u{E01F}"
+
+
+{-| Numpad 6 key (U+E020).
+-}
+numpad6 : String
+numpad6 =
+    "\u{E020}"
+
+
+{-| Numpad 7 key (U+E021).
+-}
+numpad7 : String
+numpad7 =
+    "\u{E021}"
+
+
+{-| Numpad 8 key (U+E022).
+-}
+numpad8 : String
+numpad8 =
+    "\u{E022}"
+
+
+{-| Numpad 9 key (U+E023).
+-}
+numpad9 : String
+numpad9 =
+    "\u{E023}"
+
+
+{-| Numpad multiply key (U+E024).
+-}
+multiply : String
+multiply =
+    "\u{E024}"
+
+
+{-| Numpad add key (U+E025).
+-}
+add : String
+add =
+    "\u{E025}"
+
+
+{-| Numpad separator key (U+E026).
+-}
+separator : String
+separator =
+    "\u{E026}"
+
+
+{-| Numpad subtract key (U+E027).
+-}
+subtract : String
+subtract =
+    "\u{E027}"
+
+
+{-| Numpad decimal key (U+E028).
+-}
+decimal : String
+decimal =
+    "\u{E028}"
+
+
+{-| Numpad divide key (U+E029).
+-}
+divide : String
+divide =
+    "\u{E029}"
+
+
+-- FUNCTION KEYS
+
+
+{-| F1 key (U+E031).
+-}
+f1 : String
+f1 =
+    "\u{E031}"
+
+
+{-| F2 key (U+E032).
+-}
+f2 : String
+f2 =
+    "\u{E032}"
+
+
+{-| F3 key (U+E033).
+-}
+f3 : String
+f3 =
+    "\u{E033}"
+
+
+{-| F4 key (U+E034).
+-}
+f4 : String
+f4 =
+    "\u{E034}"
+
+
+{-| F5 key (U+E035).
+-}
+f5 : String
+f5 =
+    "\u{E035}"
+
+
+{-| F6 key (U+E036).
+-}
+f6 : String
+f6 =
+    "\u{E036}"
+
+
+{-| F7 key (U+E037).
+-}
+f7 : String
+f7 =
+    "\u{E037}"
+
+
+{-| F8 key (U+E038).
+-}
+f8 : String
+f8 =
+    "\u{E038}"
+
+
+{-| F9 key (U+E039).
+-}
+f9 : String
+f9 =
+    "\u{E039}"
+
+
+{-| F10 key (U+E03A).
+-}
+f10 : String
+f10 =
+    "\u{E03A}"
+
+
+{-| F11 key (U+E03B).
+-}
+f11 : String
+f11 =
+    "\u{E03B}"
+
+
+{-| F12 key (U+E03C).
+-}
+f12 : String
+f12 =
+    "\u{E03C}"
+
+
+-- PUNCTUATION KEYS
+
+
+{-| Semicolon key (U+E018).
+-}
+semicolon : String
+semicolon =
+    "\u{E018}"
+
+
+{-| Equals key (U+E019).
+-}
+equals : String
+equals =
+    "\u{E019}"

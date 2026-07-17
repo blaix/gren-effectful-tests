@@ -1,21 +1,22 @@
 {
   "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.13.6/.schema/devbox.schema.json",
   "packages": [
-    "github:gren-lang/nix/0.6.3",
+    "gren@0.6.6",
     "nodejs@20",
     "entr@latest",
-    "just@latest"
+    "chromedriver@latest",
+    "chromium@145"
   ],
   "shell": {
     "scripts": {
       "test": [
-        "cd example && gren run Main"
-      ],
-      "all": [
-        "gren make && devbox run test && gren docs"
+        "cd tests && ./test.sh"
       ],
       "watch": [
-        "find . -name \"*.gren\" | entr -c devbox run all"
+        "find . -name \"*.gren\" | entr -c devbox run test"
+      ],
+      "docs": [
+        "gren make && gren docs && npx -y --package=gren-packages gren-doc-preview"
       ]
     }
   }

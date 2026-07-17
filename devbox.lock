@@ -1,6 +1,70 @@
 {
   "lockfile_version": "1",
   "packages": {
+    "chromedriver@latest": {
+      "last_modified": "2026-03-04T09:05:08Z",
+      "resolved": "github:NixOS/nixpkgs/0c39f3b5a9a234421d4ad43ab9c7cf64840172d0#chromedriver",
+      "source": "devbox-search",
+      "version": "145.0.7632.160",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/442jr4cdp7bfwpslhbz61n6m8y1bmxkf-chromedriver-145.0.7632.160",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/442jr4cdp7bfwpslhbz61n6m8y1bmxkf-chromedriver-145.0.7632.160"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/hryiy9sdn8aijnmgy32m9zakfb5x8y93-chromedriver-145.0.7632.160",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/hryiy9sdn8aijnmgy32m9zakfb5x8y93-chromedriver-145.0.7632.160"
+        }
+      }
+    },
+    "chromium@145": {
+      "last_modified": "2026-03-04T09:05:08Z",
+      "resolved": "github:NixOS/nixpkgs/0c39f3b5a9a234421d4ad43ab9c7cf64840172d0#chromium",
+      "source": "devbox-search",
+      "version": "145.0.7632.159",
+      "systems": {
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/dih9rf6gzzalx0arvgr5r1hgbs09w44i-chromium-145.0.7632.159",
+              "default": true
+            },
+            {
+              "name": "sandbox",
+              "path": "/nix/store/vsz7xcan1bgzd4lcdmdjklbyf2y65n95-chromium-145.0.7632.159-sandbox"
+            }
+          ],
+          "store_path": "/nix/store/dih9rf6gzzalx0arvgr5r1hgbs09w44i-chromium-145.0.7632.159"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/vdmgqh8jmxdcdggzr2myvjqdyz7p5ci4-chromium-145.0.7632.159",
+              "default": true
+            },
+            {
+              "name": "sandbox",
+              "path": "/nix/store/rvd1sawaa337zy3902yi3pjq69qna53k-chromium-145.0.7632.159-sandbox"
+            }
+          ],
+          "store_path": "/nix/store/vdmgqh8jmxdcdggzr2myvjqdyz7p5ci4-chromium-145.0.7632.159"
+        }
+      }
+    },
     "entr@latest": {
       "last_modified": "2025-03-11T17:52:14Z",
       "resolved": "github:NixOS/nixpkgs/0d534853a55b5d02a4ababa1d71921ce8f0aee4c#entr",
@@ -52,91 +116,51 @@
     "github:NixOS/nixpkgs/nixpkgs-unstable": {
       "resolved": "github:NixOS/nixpkgs/25d1b84f5c90632a623c48d83a2faf156451e6b1?lastModified=1742923925&narHash=sha256-biPjLws6FiBVUUDHEMFq5pUQL84Wf7PntPYdo3oKkFw%3D"
     },
-    "github:gren-lang/nix/0.6.3": {
-      "last_modified": "2025-09-12T06:06:13Z",
-      "resolved": "github:gren-lang/nix/fe1b96fb69df77740d31bf560cb63b3a41a3c504?lastModified=1757657173&narHash=sha256-VRZ6x0oYjwkWV32PZw8sM54bDUvfrQPrRPpAcWxLE18%3D"
-    },
-    "just@latest": {
-      "last_modified": "2025-03-20T07:39:01Z",
-      "resolved": "github:NixOS/nixpkgs/7344a3b78128f7b1765dba89060b015fb75431a7#just",
+    "gren@0.6.6": {
+      "last_modified": "2026-06-27T07:37:20Z",
+      "resolved": "github:NixOS/nixpkgs/3d46470bb3030020f7e1361f33514854f5bfa86d#gren",
       "source": "devbox-search",
-      "version": "1.40.0",
+      "version": "0.6.6",
       "systems": {
         "aarch64-darwin": {
           "outputs": [
             {
               "name": "out",
-              "path": "/nix/store/7s6jjr9yh3pjzzmfq9szl5byvd0zcm4r-just-1.40.0",
+              "path": "/nix/store/9vyc22ydaxkys8n5vkhjrxq6zv5krs9f-gren-0.6.6",
               "default": true
-            },
-            {
-              "name": "man",
-              "path": "/nix/store/kqxgdyrnd7h9vhsdyi04665i7c9c6h9q-just-1.40.0-man",
-              "default": true
-            },
-            {
-              "name": "doc",
-              "path": "/nix/store/01x2fzbbv7gs152fk0qdpl67mk2caqnz-just-1.40.0-doc"
             }
           ],
-          "store_path": "/nix/store/7s6jjr9yh3pjzzmfq9szl5byvd0zcm4r-just-1.40.0"
+          "store_path": "/nix/store/9vyc22ydaxkys8n5vkhjrxq6zv5krs9f-gren-0.6.6"
         },
         "aarch64-linux": {
           "outputs": [
             {
               "name": "out",
-              "path": "/nix/store/i0zav6qnkikj0v440n9d8vn70ch3afan-just-1.40.0",
+              "path": "/nix/store/3rlsgdzk74p5zl18v7galjnv9a1c2bc8-gren-0.6.6",
               "default": true
-            },
-            {
-              "name": "man",
-              "path": "/nix/store/ccia6l0vqg48mp4jwxchy88ildg6lp3a-just-1.40.0-man",
-              "default": true
-            },
-            {
-              "name": "doc",
-              "path": "/nix/store/zfkkmq04b9km9px6ph5myxdandp0iy7l-just-1.40.0-doc"
             }
           ],
-          "store_path": "/nix/store/i0zav6qnkikj0v440n9d8vn70ch3afan-just-1.40.0"
+          "store_path": "/nix/store/3rlsgdzk74p5zl18v7galjnv9a1c2bc8-gren-0.6.6"
         },
         "x86_64-darwin": {
           "outputs": [
             {
               "name": "out",
-              "path": "/nix/store/fl4nsvgy3si1396cxs4w1i21b2sshs4c-just-1.40.0",
+              "path": "/nix/store/56y0sjs175cqpwdfvq00yy29ibcyzbc8-gren-0.6.6",
               "default": true
-            },
-            {
-              "name": "man",
-              "path": "/nix/store/6wdy1cj4zq5fwbngdx8lyzyi65861242-just-1.40.0-man",
-              "default": true
-            },
-            {
-              "name": "doc",
-              "path": "/nix/store/szwyj66avppjb9nq3k612shklrqzymis-just-1.40.0-doc"
             }
           ],
-          "store_path": "/nix/store/fl4nsvgy3si1396cxs4w1i21b2sshs4c-just-1.40.0"
+          "store_path": "/nix/store/56y0sjs175cqpwdfvq00yy29ibcyzbc8-gren-0.6.6"
         },
         "x86_64-linux": {
           "outputs": [
             {
               "name": "out",
-              "path": "/nix/store/61yk0f16bysq9pzm3dgyanbnxx4vylm7-just-1.40.0",
+              "path": "/nix/store/8h4kkbn092a271i3277v4azsryw5vw0b-gren-0.6.6",
               "default": true
-            },
-            {
-              "name": "man",
-              "path": "/nix/store/8vyfrw5lc62bfk48pszj5d8c6f67cv5r-just-1.40.0-man",
-              "default": true
-            },
-            {
-              "name": "doc",
-              "path": "/nix/store/lrissa28adlb43a2qcq379b7qsdfcdmr-just-1.40.0-doc"
             }
           ],
-          "store_path": "/nix/store/61yk0f16bysq9pzm3dgyanbnxx4vylm7-just-1.40.0"
+          "store_path": "/nix/store/8h4kkbn092a271i3277v4azsryw5vw0b-gren-0.6.6"
         }
       }
     },

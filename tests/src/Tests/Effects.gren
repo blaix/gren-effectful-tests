@@ -1,0 +1,61 @@
+module Tests.Effects exposing (tests)
+
+
+import Bytes
+import Expect
+import FileSystem
+import FileSystem.Path as Path
+import Fuzz exposing (array, int)
+import Task exposing (Task)
+import Test
+import Test.Runner.Effectful as Effectful exposing (..)
+
+
+tests : FileSystem.Permission -> Effectful.Test
+tests fsPerm =
+    describe "Effectful tests"
+        [ await "reading file" (readTestFile fsPerm) <| \contents ->
+            test "returns the contents" <| \_ ->
+                Expect.equal (Just "some text\n") contents
+
+        , describe "Nesting a describe"
+            [ awaitError "Expected errors" (Task.fail "failure") <| \error ->
+              await "nesting a" (Task.succeed "a") <| \a ->
+              await "nesting b" (Task.succeed "b") <| \b ->
+                test "nested tasks can be tested" <| \_ ->
+                    String.join " " [ a, b, error ]
+                        |> Expect.equal "a b failure"
+
+            , test "test that doesn't need a task" <| \_ ->
+                Expect.equal True True
+
+            , wrap <| Test.test "wrapping a core test" <| \_ ->
+                Expect.equal True True
+
+            , fuzz (array int) "Array.length should never be negative" <| \fuzzArray ->
+                fuzzArray
+                    |> Array.length
+                    |> Expect.atLeast 0
+
+            , fuzz2 (array int) (array int) "Two Array lengths should never be negative" <| \array1 array2 ->
+                array1
+                    |> Array.append array2
+                    |> Array.length
+                    |> Expect.atLeast 0
+
+            , fuzz3 (array int) (array int) (array int) "Three Array lengths should never be negative" <| \array1 array2 array3 ->
+                array1
+                    |> Array.append array2
+                    |> Array.append array3
+                    |> Array.length
+                    |> Expect.atLeast 0
+            ]
+        ]
+
+
+readTestFile : FileSystem.Permission -> Task FileSystem.Error (Maybe String)
+readTestFile permission =
+    "./test.txt"
+        |> Path.fromPosixString
+        |> FileSystem.readFile permission
+        |> Task.map Bytes.toString
