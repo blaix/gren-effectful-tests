@@ -1,0 +1,54 @@
+module Tests exposing (main)
+
+
+import Init
+import Node
+import Random
+import Stream.Log as Log
+import Task
+import Test.Runner.Browser as Browser
+import Test.Runner.Effectful as Effectful exposing (concat)
+import Tests.Browser
+import Tests.Effects
+import Time
+
+
+main : Node.SimpleProgram a
+main =
+    let
+        browserOptions =
+            Browser.options
+                -- default is headless
+                -- |> Browser.setVisibility Browser.Visible
+
+        runOptions now =
+            { runs = 2
+            , seed = 
+                Random.initialSeed (Time.posixToMillis now)
+            }
+
+        tests browserPerms =
+            concat
+                [ Tests.Effects.tests browserPerms.fsPerm
+                , Browser.withSession browserPerms browserOptions <| \session ->
+                    Tests.Browser.tests browserPerms.fsPerm session
+                ]
+    in
+    Node.defineSimpleProgram <| \env ->
+        Effectful.initialize env <| \config ->
+        Browser.initialize <| \browserPerms ->
+        Init.awaitTask Time.now <| \now ->
+            
+            Log.line env.stdout "Run with default options"
+                |> Task.andThen (\_ -> Effectful.run config (tests browserPerms))
+                |> Task.andThen
+                    (\_ -> Log.line env.stdout "Run again with custom options")
+                |> Task.andThen
+                    (\_ ->
+                        Effectful.runWithOptions config
+                            (runOptions now)
+                            (tests browserPerms)
+                    )
+
+                -- Done
+                |> Node.endSimpleProgram

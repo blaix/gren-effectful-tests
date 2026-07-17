@@ -1,0 +1,175 @@
+module Tests.Browser exposing (tests)
+
+
+import Expect
+import FileSystem
+import FileSystem.Path as Path
+import Task exposing (Task)
+import Test.Runner.Browser as Browser
+import Test.Runner.Key as Key
+import Test.Runner.Effectful as Effectful exposing (..)
+
+
+tests : FileSystem.Permission -> Browser.Session -> Effectful.Test
+tests fsPerm session =
+    describe "Browser tests"
+        [ navigationTests session
+        , elementTests session
+        , formTests session
+        , keyTests session
+        , screenshotTests fsPerm session
+        ]
+
+
+navigationTests : Browser.Session -> Effectful.Test
+navigationTests session =
+    describe "Navigation"
+        [ await "navigate to index" (Browser.navigateTo "http://127.0.0.1:3456/" session) <| \_ ->
+          await "get url" (Browser.getUrl session) <| \url ->
+          await "get title" (Browser.getTitle session) <| \title ->
+            describe "index page"
+                [ test "url is correct" <| \_ ->
+                    Expect.equal "http://127.0.0.1:3456/" url
+
+                , test "title is correct" <| \_ ->
+                    Expect.equal "Test Site" title
+                ]
+        ]
+
+
+elementTests : Browser.Session -> Effectful.Test
+elementTests session =
+    describe "Elements"
+        [ await "navigate to index" (Browser.navigateTo "http://127.0.0.1:3456/" session) <| \_ ->
+          await "find heading" (Browser.findElement "h1" session) <| \heading ->
+          await "get heading text" (Browser.getText heading session) <| \headingText ->
+          await "find js content" (Browser.findElement "#js-content" session) <| \jsContent ->
+          await "get js content text" (Browser.getText jsContent session) <| \jsText ->
+          await "find all items" (Browser.findElements ".item" session) <| \items ->
+          await "find special element" (Browser.findElement "[data-testid]" session) <| \special ->
+          await "get data-testid" (Browser.getAttribute "data-testid" special session) <| \testId ->
+          await "get special text" (Browser.getText special session) <| \specialText ->
+            describe "index page elements"
+                [ test "heading text is Welcome" <| \_ ->
+                    Expect.equal "Welcome" headingText
+
+                , test "JS-rendered content is present" <| \_ ->
+                    Expect.equal "Rendered by JavaScript" jsText
+
+                , test "found 3 items" <| \_ ->
+                    Expect.equal 3 (Array.length items)
+
+                , test "data-testid attribute is correct" <| \_ ->
+                    Expect.equal "special" testId
+
+                , test "special element text is correct" <| \_ ->
+                    Expect.equal "Special Element" specialText
+                ]
+        ]
+
+
+formTests : Browser.Session -> Effectful.Test
+formTests session =
+    describe "Form interaction"
+        [ await "navigate to form" (Browser.navigateTo "http://127.0.0.1:3456/form" session) <| \_ ->
+          await "find name input" (Browser.findElement "#name-input" session) <| \input ->
+          await "type initial text" (Browser.sendKeys "initial" input session) <| \_ ->
+          await "clear input" (Browser.clear input session) <| \_ ->
+          await "type new text" (Browser.sendKeys "Gren" input session) <| \_ ->
+          await "find submit button" (Browser.findElement "#submit-btn" session) <| \submitBtn ->
+          await "click submit" (Browser.click submitBtn session) <| \_ ->
+          await "find greeting" (Browser.findElement "#greeting" session) <| \greeting ->
+          await "get greeting text" (Browser.getText greeting session) <| \greetingText ->
+            test "message shows expected text" <| \_ ->
+                Expect.equal "Hello, Gren!" greetingText
+        ]
+
+
+keyTests : Browser.Session -> Effectful.Test
+keyTests session =
+    describe "Special keys"
+        [ describe "Enter submits form"
+            [ await "navigate to form" (Browser.navigateTo "http://127.0.0.1:3456/form" session) <| \_ ->
+              await "find name input" (Browser.findElement "#name-input" session) <| \input ->
+              await "type name and press Enter" (Browser.sendKeys ("KeyTest" ++ Key.enter) input session) <| \_ ->
+              await "find greeting" (Browser.findElement "#greeting" session) <| \greeting ->
+              await "get greeting text" (Browser.getText greeting session) <| \greetingText ->
+                test "Enter submitted the form" <| \_ ->
+                    Expect.equal "Hello, KeyTest!" greetingText
+            ]
+
+        , describe "Backspace deletes characters"
+            [ await "navigate to form" (Browser.navigateTo "http://127.0.0.1:3456/form" session) <| \_ ->
+              await "find name input" (Browser.findElement "#name-input" session) <| \input ->
+              await "type text then backspace" (Browser.sendKeys ("Helloo" ++ Key.backspace) input session) <| \_ ->
+              await "submit with Enter" (Browser.sendKeys Key.enter input session) <| \_ ->
+              await "find greeting" (Browser.findElement "#greeting" session) <| \greeting ->
+              await "get greeting text" (Browser.getText greeting session) <| \greetingText ->
+                test "Backspace removed last character" <| \_ ->
+                    Expect.equal "Hello, Hello!" greetingText
+            ]
+
+        , describe "Tab moves focus"
+            [ await "navigate to form" (Browser.navigateTo "http://127.0.0.1:3456/form" session) <| \_ ->
+              await "find name input" (Browser.findElement "#name-input" session) <| \input ->
+              await "type name" (Browser.sendKeys "TabTest" input session) <| \_ ->
+              await "press Tab to move to submit button" (Browser.sendKeys Key.tab input session) <| \_ ->
+              await "find active element" (Browser.findElement "#submit-btn:focus" session) <| \focused ->
+              await "get focused tag" (Browser.getAttribute "id" focused session) <| \focusedId ->
+                test "Tab moved focus to submit button" <| \_ ->
+                    Expect.equal "submit-btn" focusedId
+            ]
+
+        , describe "Escape clears selection"
+            [ await "navigate to form" (Browser.navigateTo "http://127.0.0.1:3456/form" session) <| \_ ->
+              await "find name input" (Browser.findElement "#name-input" session) <| \input ->
+              await "type text" (Browser.sendKeys "test" input session) <| \_ ->
+              await "press Escape" (Browser.sendKeys Key.escape input session) <| \_ ->
+                test "Escape key was sent without error" <| \_ ->
+                    Expect.pass
+            ]
+
+        , describe "Shift modifier capitalizes characters"
+            [ await "navigate to form" (Browser.navigateTo "http://127.0.0.1:3456/form" session) <| \_ ->
+              await "find name input" (Browser.findElement "#name-input" session) <| \input ->
+              await "type with shift held then released" (Browser.sendKeys (Key.shift ++ "hel" ++ Key.null ++ "lo") input session) <| \_ ->
+              await "submit form" (Browser.sendKeys Key.enter input session) <| \_ ->
+              await "find greeting" (Browser.findElement "#greeting" session) <| \greeting ->
+              await "get greeting text" (Browser.getText greeting session) <| \greetingText ->
+                test "shift applied to first 3 chars only" <| \_ ->
+                    Expect.equal "Hello, HELlo!" greetingText
+            ]
+        ]
+
+
+screenshotTests : FileSystem.Permission -> Browser.Session -> Effectful.Test
+screenshotTests fsPerm session =
+    let
+        screenshotDir =
+            Path.fromPosixString "./screenshots"
+
+        pagePath =
+            Path.fromPosixString "./screenshots/page.png"
+
+        elementPath =
+            Path.fromPosixString "./screenshots/element.png"
+
+        cleanScreenshots =
+            FileSystem.remove fsPerm { recursive = True } screenshotDir
+                |> Task.onError (\_ -> Task.succeed screenshotDir)
+                |> Task.andThen (\_ -> FileSystem.makeDirectory fsPerm { recursive = True } screenshotDir)
+                |> Task.mapError (\_ -> "Failed to prepare screenshots directory")
+    in
+    describe "Screenshots"
+        [ await "clean screenshots directory" cleanScreenshots <| \_ ->
+          await "navigate to index" (Browser.navigateTo "http://127.0.0.1:3456/" session) <| \_ ->
+          await "take page screenshot" (Browser.screenshot pagePath session) <| \_ ->
+          await "find heading" (Browser.findElement "h1" session) <| \heading ->
+          await "take element screenshot" (Browser.elementScreenshot heading elementPath session) <| \_ ->
+          await "verify page screenshot exists" (FileSystem.checkAccess fsPerm [] pagePath) <| \_ ->
+          await "verify element screenshot exists" (FileSystem.checkAccess fsPerm [] elementPath) <| \_ ->
+            test "screenshots were saved" <| \_ ->
+                -- We may eventually support comparing screenshots, but for now
+                -- it's enough to know we got here without error.
+                Expect.pass
+        ]

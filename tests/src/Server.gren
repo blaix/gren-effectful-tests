@@ -1,0 +1,183 @@
+module Server exposing (main)
+
+
+import HttpServer
+import HttpServer.Response as Response
+import Init
+import Node
+import Stream.Log
+import Task exposing (Task)
+
+
+type alias Model =
+    { server : Maybe HttpServer.Server
+    }
+
+
+type Msg
+    = GotRequest { request : HttpServer.Request, response : Response.Response }
+
+
+main : Node.Program Model Msg
+main =
+    Node.defineProgram
+        { init = init
+        , update = update
+        , subscriptions = subscriptions
+        }
+
+
+serverConfig =
+    { host = "127.0.0.1"
+    , port_ = 3456
+    }
+
+
+startServer : 
+    HttpServer.Permission
+    -> Task x { server : Maybe HttpServer.Server, message : String }
+startServer httpPerm =
+    HttpServer.createServer httpPerm serverConfig
+        |> Task.map
+            (\server ->
+                { server = Just server
+                , message =
+                    "Server started on " ++
+                    serverConfig.host ++ ":" ++
+                    String.fromInt serverConfig.port_
+                } 
+            )
+        |> Task.onError
+            (\error ->
+                Task.succeed
+                    { server = Nothing
+                    , message =
+                        "Server failed to start: " ++
+                        Debug.toString error
+                    }
+            )
+
+
+init : Node.Environment -> Init.Task { model : Model, command : Cmd Msg }
+init env =
+    Init.await HttpServer.initialize <| \httpPerm ->
+    Init.awaitTask (startServer httpPerm) <| \serverResult ->
+        Node.startProgram <|
+            { model = { server = serverResult.server }
+            , command =
+                when serverResult.server is
+                    Just _ ->
+                        Stream.Log.line env.stdout serverResult.message
+                            |> Task.execute
+                    
+                    Nothing ->
+                        Stream.Log.line env.stderr serverResult.message
+                            |> Task.map (\_ -> Node.exitWithCode 1)
+                            |> Task.executeCmd
+            }
+
+
+update : Msg -> Model -> { model : Model, command : Cmd Msg }
+update msg model =
+    when msg is
+        GotRequest { request, response } ->
+            { model = model
+            , command = handleRequest request response
+            }
+
+
+handleRequest : HttpServer.Request -> Response.Response -> Cmd Msg
+handleRequest request response =
+    when request.url.path is
+        "/" ->
+            response
+                |> Response.setStatus 200
+                |> Response.setHeader "Content-Type" "text/html"
+                |> Response.setBody indexPage
+                |> Response.send
+
+        "/form" ->
+            response
+                |> Response.setStatus 200
+                |> Response.setHeader "Content-Type" "text/html"
+                |> Response.setBody formPage
+                |> Response.send
+
+        _ ->
+            response
+                |> Response.setStatus 404
+                |> Response.setHeader "Content-Type" "text/html"
+                |> Response.setBody notFoundPage
+                |> Response.send
+
+
+indexPage : String
+indexPage =
+    """
+    <!DOCTYPE html>
+    <html>
+    <head><title>Test Site</title></head>
+    <body>
+        <h1>Welcome</h1>
+        <p>This is the test site.</p>
+        <div id="js-content"></div>
+        <ul>
+            <li class="item">Item One</li>
+            <li class="item">Item Two</li>
+            <li class="item">Item Three</li>
+        </ul>
+        <div data-testid="special">Special Element</div>
+        <a href="/form">Go to form</a>
+        <script>document.getElementById('js-content').textContent = 'Rendered by JavaScript';</script>
+    </body>
+    </html>
+    """
+
+
+formPage : String
+formPage =
+    """
+    <!DOCTYPE html>
+    <html>
+    <head><title>Form Page</title></head>
+    <body>
+        <h1>Form</h1>
+        <form id="greeting-form">
+            <input type="text" id="name-input" name="name" placeholder="Enter your name" />
+            <button type="submit" id="submit-btn">Submit</button>
+        </form>
+        <div id="greeting"></div>
+        <a href="/">Back to home</a>
+        <script>
+            document.getElementById('greeting-form').addEventListener('submit', function(e) {
+                e.preventDefault();
+                var name = document.getElementById('name-input').value;
+                document.getElementById('greeting').textContent = 'Hello, ' + name + '!';
+            });
+        </script>
+    </body>
+    </html>
+    """
+
+
+notFoundPage : String
+notFoundPage =
+    """
+    <!DOCTYPE html>
+    <html>
+    <head><title>Not Found</title></head>
+    <body><h1>404 Not Found</h1></body>
+    </html>
+    """
+
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    when model.server is
+        Just server ->
+            HttpServer.onRequest server (\request response -> GotRequest { request = request, response = response })
+
+        Nothing ->
+            Sub.none
+
+

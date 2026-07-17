@@ -1,0 +1,106 @@
+module Test.Runner.WebDriver exposing
+    ( Connection
+    , webDriverCommand
+    , webDriverQuery
+    , webDriverPostQuery
+    , w3cElementKey
+    , elementIdDecoder
+    , pollForReady
+    , deleteSession
+    , decodeAndSaveScreenshot
+    )
+
+
+import Base64.Decode as Base64
+import FileSystem
+import FileSystem.Path as Path
+import HttpClient
+import HttpServer
+import Json.Decode as Decode
+import Json.Encode as Encode
+import Process
+import Task exposing (Task)
+
+
+type alias Connection =
+    { sessionId : String
+    , httpPerm : HttpClient.Permission
+    , baseUrl : String
+    }
+
+
+webDriverCommand : String -> Encode.Value -> Connection -> Task HttpClient.Error {}
+webDriverCommand path body { sessionId, httpPerm, baseUrl } =
+    HttpClient.post (baseUrl ++ "/session/" ++ sessionId ++ path)
+        |> HttpClient.withJsonBody body
+        |> HttpClient.expectAnything
+        |> HttpClient.send httpPerm
+        |> Task.map (\_ -> {})
+
+
+webDriverQuery : String -> Decode.Decoder a -> Connection -> Task HttpClient.Error a
+webDriverQuery path decoder { sessionId, httpPerm, baseUrl } =
+    HttpClient.get (baseUrl ++ "/session/" ++ sessionId ++ path)
+        |> HttpClient.expectJson (Decode.field "value" decoder)
+        |> HttpClient.send httpPerm
+        |> Task.map .data
+
+
+webDriverPostQuery : String -> Encode.Value -> Decode.Decoder a -> Connection -> Task HttpClient.Error a
+webDriverPostQuery path body decoder { sessionId, httpPerm, baseUrl } =
+    HttpClient.post (baseUrl ++ "/session/" ++ sessionId ++ path)
+        |> HttpClient.withJsonBody body
+        |> HttpClient.expectJson (Decode.field "value" decoder)
+        |> HttpClient.send httpPerm
+        |> Task.map .data
+
+
+{-| Unique identifier defined by the webdriver protocol as the key for
+    identifying web elements inside json payloads.
+-}
+w3cElementKey : String
+w3cElementKey =
+    "element-6066-11e4-a52e-4f735466cecf"
+
+
+elementIdDecoder : Decode.Decoder String
+elementIdDecoder =
+    Decode.field w3cElementKey Decode.string
+
+
+pollForReady : HttpClient.Permission -> String -> Int -> Task String {}
+pollForReady httpPerm baseUrl retries =
+    if retries <= 0 then
+        Task.fail "Server failed to start"
+
+    else
+        HttpClient.get (baseUrl ++ "/status")
+            |> HttpClient.expectAnything
+            |> HttpClient.send httpPerm
+            |> Task.map (\_ -> {})
+            |> Task.onError
+                (\_ ->
+                    Process.sleep 500
+                        |> Task.andThen (\_ -> pollForReady httpPerm baseUrl (retries - 1))
+                )
+
+
+deleteSession : Connection -> Task Never {}
+deleteSession { sessionId, httpPerm, baseUrl } =
+    HttpClient.request HttpServer.DELETE (baseUrl ++ "/session/" ++ sessionId)
+        |> HttpClient.expectAnything
+        |> HttpClient.send httpPerm
+        |> Task.map (\_ -> {})
+        |> Task.onError (\_ -> Task.succeed {})
+
+
+decodeAndSaveScreenshot : FileSystem.Permission -> Path.Path -> String -> Task String Path.Path
+decodeAndSaveScreenshot fsPerm path base64String =
+    when Base64.bytes base64String is
+        Err _ ->
+            Task.fail "Invalid screenshot data: base64 decode failed"
+
+        Ok bytes_ ->
+            FileSystem.writeFile fsPerm bytes_ path
+                |> Task.map (\_ -> path)
+                |> Task.mapError (\e -> FileSystem.errorToString e)

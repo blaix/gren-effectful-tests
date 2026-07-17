@@ -1,0 +1,505 @@
+module Test.Runner.Browser exposing
+    ( Session
+    , Element
+    , Error(..)
+    , Options
+    , Permissions
+    , Visibility(..)
+    , options
+    , initialize
+    , setVisibility
+    , setPort
+    , withSession
+    , navigateTo
+    , getUrl
+    , getTitle
+    , findElement
+    , findElements
+    , click
+    , sendKeys
+    , clear
+    , getText
+    , getAttribute
+    , Screenshot
+    , screenshot
+    , elementScreenshot
+    )
+
+
+{-| Browser automation.
+
+This module lets you drive a real browser via the W3C WebDriver protocol.
+
+See `tests/src/Tests/Browser.gren` for full usage examples.
+
+## Permissions
+
+@docs Permissions, initialize
+
+## Running Browser Tests
+
+@docs withSession, Options, options, setVisibility, setPort, Visibility, Session
+
+## Navigation
+
+@docs navigateTo, getUrl, getTitle
+
+## Finding Elements
+
+@docs findElement, findElements, Element
+
+## Element Interaction
+
+@docs click, sendKeys, clear, getText, getAttribute
+
+## Screenshots
+
+@docs screenshot, elementScreenshot, Screenshot
+
+## Errors
+
+@docs Error
+
+-}
+
+import ChildProcess
+import Expect
+import FileSystem
+import FileSystem.Path as Path
+import HttpClient
+import Init
+import Json.Decode as Decode
+import Json.Encode as Encode
+import Node
+import Process
+import Task exposing (Task)
+import Test.Runner.Effectful as Effectful
+import Test.Runner.WebDriver as WebDriver
+
+
+-- TYPES
+
+
+{-| Subsystem permissions needed for browser tests.
+
+You can create these manually in your program's init, or if you trust the
+package to gather permissions for you, get them from the
+[`initialize`](#initialize) convenient function.
+-}
+type alias Permissions =
+    { httpPerm : HttpClient.Permission
+    , cpPerm : ChildProcess.Permission
+    , fsPerm : FileSystem.Permission
+    }
+
+
+{-| A browser session. You get this from [`withSession`](#withSession) and is
+required for the browser interaction functions.
+-}
+type Session
+    = Session
+        { connection : WebDriver.Connection
+        , fsPerm : FileSystem.Permission
+        , processId : Process.Id
+        }
+
+
+{-| A reference to a DOM element found via [`findElement`](#findElements) or
+[`findElements`](#findElements).
+-}
+type Element
+    = Element String
+
+
+{-| A screenshot captured from the browser. Created by
+[`screenshot`](#screenshot) or [`elementScreenshot`](#elementScreenshot).
+-}
+type Screenshot
+    = Screenshot Path.Path
+
+
+{-| Errors that can occur during a browser session.
+
+* `ChromeDriverError` means we got an error directly from chromedriver.
+* `HttpError` means we got an error trying to communicate with chromedriver.
+* `FileSystemError` means we got an error interacting with the filesystem (e.g. saving a screenshot).
+-}
+type Error
+    = ChromeDriverError String
+    | HttpError String
+    | FileSystemError String
+
+
+{-| Options for configuring the browser session. Create with [`options`](#options) and
+customize with [`setVisibility`](#setVisibility) and [`setPort`](#setPort).
+-}
+type Options
+    = Options
+        { visibility : Visibility
+        , port_ : Int
+        }
+
+
+{-| Whether Chrome runs with a visible window or headless.
+See [`setVisibility`](#setVisibility).
+-}
+type Visibility
+    = Headless
+    | Visible
+
+
+{-| Default options: headless browser on port 9515.
+-}
+options : Options
+options =
+    Options
+        { visibility = Headless
+        , port_ = 9515
+        }
+
+
+{-| Set whether browser runs headless or with a visible window.
+-}
+setVisibility : Visibility -> Options -> Options
+setVisibility visibility (Options opts) =
+    Options { opts | visibility = visibility }
+
+
+{-| Set the webdriver communicaiton port (default: 9515).
+-}
+setPort : Int -> Options -> Options
+setPort port_ (Options opts) =
+    Options { opts | port_ = port_ }
+
+
+-- BROWSER SESSION
+
+
+{-| Convenience function to get a [`Permissions`](#Permissions) record.
+
+**Note:** Because this is used as part of your application initialization, it
+implicitly gives the package unlimited permissions. If you want more control,
+you'll need to create your own [`Permissions`](#Permissions) record. See the
+README section on Subsystems and Permissions for an example.
+
+-}
+initialize : (Permissions -> Init.Task a) -> Init.Task a
+initialize callback =
+    Init.await HttpClient.initialize <| \httpPerm ->
+    Init.await ChildProcess.initialize <| \cpPerm ->
+    Init.await FileSystem.initialize <| \fsPerm ->
+        callback { httpPerm = httpPerm, cpPerm = cpPerm, fsPerm = fsPerm }
+
+
+{-| Start an automated browser session.
+
+This gives you a [`Session`](#Session) value that you can pass to the other
+functions in this module that manipulate or query the session.
+-}
+withSession : Permissions -> Options -> (Session -> Effectful.Test) -> Effectful.Test
+withSession perms opts callback =
+    Task.await (startSession perms opts) <| \sessionResult ->
+        when sessionResult is
+            Err error ->
+                Effectful.test "Browser session" <| \_ ->
+                    Expect.fail (errorToString error)
+
+            Ok session ->
+                Task.await (callback session) <| \callbackResult ->
+                Task.await (cleanupSession session) <| \_ ->
+                    Task.succeed callbackResult
+
+
+startSession : Permissions -> Options -> Task Never (Result Error Session)
+startSession perms (Options opts) =
+    let
+        portStr =
+            String.fromInt opts.port_
+
+        baseUrl =
+            "http://localhost:" ++ portStr
+    in
+    ChildProcess.run perms.cpPerm "chromedriver" [ "--version" ] ChildProcess.defaultRunOptions
+        |> Task.andThen
+            (\_ ->
+                Process.spawn
+                    (ChildProcess.run perms.cpPerm "chromedriver" [ "--port=" ++ portStr ] ChildProcess.defaultRunOptions)
+                    |> Task.andThen
+                        (\processId ->
+                            WebDriver.pollForReady perms.httpPerm baseUrl 20
+                                |> Task.mapError ChromeDriverError
+                                |> Task.andThen (\_ -> createWebDriverSession perms.httpPerm baseUrl opts.visibility)
+                                |> Task.map
+                                    (\sessionId ->
+                                        Session
+                                            { connection =
+                                                { sessionId = sessionId
+                                                , httpPerm = perms.httpPerm
+                                                , baseUrl = baseUrl
+                                                }
+                                            , fsPerm = perms.fsPerm
+                                            , processId = processId
+                                            }
+                                    )
+                                |> Task.onError
+                                    (\error ->
+                                        Process.kill processId
+                                            |> Task.andThen (\_ -> Task.fail error)
+                                    )
+                        )
+                    |> Task.map Ok
+                    |> Task.onError (\error -> Task.succeed (Err error))
+            )
+        |> Task.onError
+            (\failedRun ->
+                when failedRun is
+                    ChildProcess.InitError _ ->
+                        Task.succeed (Err (chromeDriverNotFound))
+
+                    ChildProcess.ProgramError { exitCode } ->
+                        if exitCode == 127 then
+                            Task.succeed (Err (chromeDriverNotFound))
+
+                        else
+                            Task.succeed
+                                (Err
+                                    (ChromeDriverError
+                                        ("chromedriver exited with code " ++ String.fromInt exitCode)
+                                    )
+                                )
+            )
+
+
+createWebDriverSession : HttpClient.Permission -> String -> Visibility -> Task Error String
+createWebDriverSession httpPerm baseUrl visibility =
+    let
+        chromeArgs =
+            when visibility is
+                Headless ->
+                    [ "--headless" ]
+
+                Visible ->
+                    []
+
+        body =
+            Encode.object
+                [ { key = "capabilities"
+                  , value =
+                        Encode.object
+                            [ { key = "alwaysMatch"
+                              , value =
+                                    Encode.object
+                                        [ { key = "goog:chromeOptions"
+                                          , value =
+                                                Encode.object
+                                                    [ { key = "args"
+                                                      , value = Encode.array Encode.string chromeArgs
+                                                      }
+                                                    ]
+                                          }
+                                        ]
+                              }
+                            ]
+                  }
+                ]
+    in
+    HttpClient.post (baseUrl ++ "/session")
+        |> HttpClient.withJsonBody body
+        |> HttpClient.expectJson sessionIdDecoder
+        |> HttpClient.send httpPerm
+        |> Task.map .data
+        |> Task.mapError httpErrorToError
+
+
+sessionIdDecoder : Decode.Decoder String
+sessionIdDecoder =
+    Decode.field "value" (Decode.field "sessionId" Decode.string)
+
+
+cleanupSession : Session -> Task Never {}
+cleanupSession (Session { connection, processId }) =
+    WebDriver.deleteSession connection
+        |> Task.andThen (\_ -> Process.kill processId)
+
+
+-- NAVIGATION
+
+
+{-| Navigate to a URL.
+-}
+navigateTo : String -> Session -> Task Error {}
+navigateTo url (Session { connection }) =
+    WebDriver.webDriverCommand "/url"
+        (Encode.object [ { key = "url", value = Encode.string url } ])
+        connection
+        |> Task.mapError httpErrorToError
+
+
+{-| Get the current page URL.
+-}
+getUrl : Session -> Task Error String
+getUrl (Session { connection }) =
+    WebDriver.webDriverQuery "/url" Decode.string connection
+        |> Task.mapError httpErrorToError
+
+
+{-| Get the current page title.
+-}
+getTitle : Session -> Task Error String
+getTitle (Session { connection }) =
+    WebDriver.webDriverQuery "/title" Decode.string connection
+        |> Task.mapError httpErrorToError
+
+
+-- FINDING ELEMENTS
+
+
+{-| Find a single element by CSS selector.
+-}
+findElement : String -> Session -> Task Error Element
+findElement selector (Session { connection }) =
+    WebDriver.webDriverPostQuery "/element"
+        (Encode.object
+            [ { key = "using", value = Encode.string "css selector" }
+            , { key = "value", value = Encode.string selector }
+            ]
+        )
+        (Decode.map Element WebDriver.elementIdDecoder)
+        connection
+        |> Task.mapError httpErrorToError
+
+
+{-| Find all elements matching a CSS selector.
+-}
+findElements : String -> Session -> Task Error (Array Element)
+findElements selector (Session { connection }) =
+    WebDriver.webDriverPostQuery "/elements"
+        (Encode.object
+            [ { key = "using", value = Encode.string "css selector" }
+            , { key = "value", value = Encode.string selector }
+            ]
+        )
+        (Decode.array (Decode.map Element WebDriver.elementIdDecoder))
+        connection
+        |> Task.mapError httpErrorToError
+
+
+-- ELEMENT INTERACTION
+
+
+{-| Click an element.
+-}
+click : Element -> Session -> Task Error {}
+click (Element elementId) (Session { connection }) =
+    WebDriver.webDriverCommand ("/element/" ++ elementId ++ "/click")
+        (Encode.object [])
+        connection
+        |> Task.mapError httpErrorToError
+
+
+{-| Send keystrokes to an element. Use `Test.Runner.Key` for special
+keys like Enter, Escape, Backspace, etc.
+
+    import Test.Runner.Key as Key
+
+    -- Type text then press Enter:
+    Browser.sendKeys ("hello" ++ Key.enter) input session
+
+Modifier keys (`Key.shift`, `Key.control`, `Key.alt`, `Key.meta`) are sticky —
+they stay held down and apply to subsequent characters until released with
+`Key.null`:
+
+    -- Type "HELlo" (shift held for first 3 chars, then released):
+    Browser.sendKeys (Key.shift ++ "hel" ++ Key.null ++ "lo") input session
+
+-}
+sendKeys : String -> Element -> Session -> Task Error {}
+sendKeys text (Element elementId) (Session { connection }) =
+    WebDriver.webDriverCommand ("/element/" ++ elementId ++ "/value")
+        (Encode.object [ { key = "text", value = Encode.string text } ])
+        connection
+        |> Task.mapError httpErrorToError
+
+
+{-| Clear the contents of an input element.
+-}
+clear : Element -> Session -> Task Error {}
+clear (Element elementId) (Session { connection }) =
+    WebDriver.webDriverCommand ("/element/" ++ elementId ++ "/clear")
+        (Encode.object [])
+        connection
+        |> Task.mapError httpErrorToError
+
+
+{-| Get the visible text of an element.
+-}
+getText : Element -> Session -> Task Error String
+getText (Element elementId) (Session { connection }) =
+    WebDriver.webDriverQuery ("/element/" ++ elementId ++ "/text") Decode.string connection
+        |> Task.mapError httpErrorToError
+
+
+{-| Get an attribute value of an element.
+-}
+getAttribute : String -> Element -> Session -> Task Error String
+getAttribute name (Element elementId) (Session { connection }) =
+    WebDriver.webDriverQuery ("/element/" ++ elementId ++ "/attribute/" ++ name) Decode.string connection
+        |> Task.mapError httpErrorToError
+
+
+-- SCREENSHOTS
+
+
+{-| Capture a screenshot of the current viewport and save it to the given path.
+-}
+screenshot : Path.Path -> Session -> Task Error Screenshot
+screenshot path (Session { connection, fsPerm }) =
+    WebDriver.webDriverQuery "/screenshot" Decode.string connection
+        |> Task.mapError httpErrorToError
+        |> Task.andThen
+            (\base64String ->
+                WebDriver.decodeAndSaveScreenshot fsPerm path base64String
+                    |> Task.map Screenshot
+                    |> Task.mapError FileSystemError
+            )
+
+
+{-| Capture a screenshot of a specific element and save it to the given path.
+-}
+elementScreenshot : Element -> Path.Path -> Session -> Task Error Screenshot
+elementScreenshot (Element elementId) path (Session { connection, fsPerm }) =
+    WebDriver.webDriverQuery ("/element/" ++ elementId ++ "/screenshot") Decode.string connection
+        |> Task.mapError httpErrorToError
+        |> Task.andThen
+            (\base64String ->
+                WebDriver.decodeAndSaveScreenshot fsPerm path base64String
+                    |> Task.map Screenshot
+                    |> Task.mapError FileSystemError
+            )
+
+
+-- HELPERS
+
+
+errorToString : Error -> String
+errorToString error =
+    when error is
+        ChromeDriverError message ->
+            "ChromeDriver error: " ++ message
+
+        HttpError message ->
+            "HTTP error: " ++ message
+
+        FileSystemError message ->
+            "File system error: " ++ message
+
+
+chromeDriverNotFound : Error
+chromeDriverNotFound =
+    ChromeDriverError
+        "chromedriver not found. Install it from https://chromedriver.chromium.org/downloads or run: npm install -g chromedriver"
+
+
+httpErrorToError : HttpClient.Error -> Error
+httpErrorToError error =
+    HttpError (HttpClient.errorToString error)

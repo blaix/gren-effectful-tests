@@ -1,3 +1,4 @@
 .gren
 docs.json
-example/app
+tests/server/
+tests/screenshots/

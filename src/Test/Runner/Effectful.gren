@@ -1,5 +1,7 @@
-module Test.Runner.Effectful exposing 
-    ( Program
+module Test.Runner.Effectful exposing
+    ( -- CONFIG
+      Config
+    , initialize
 
     -- TESTS
     , Test
@@ -21,7 +23,7 @@ module Test.Runner.Effectful exposing
     , todo
     , skip
     , only
-    
+
     -- FUZZ TESTING
     , fuzz
     , fuzz2
@@ -31,9 +33,13 @@ module Test.Runner.Effectful exposing
 
 {-| A test runner that supports running Tasks.
 
+## Config
+
+@docs Config, initialize
+
 ## Running Tests
 
-@docs run, runWithOptions, Options, Program
+@docs run, runWithOptions, Options
 
 ## Awaiting Tasks
 
@@ -46,7 +52,7 @@ module Test.Runner.Effectful exposing
 ## Test Organization
 
 @docs concat, describe, todo, skip, only
-    
+
 ## Fuzz Testing
 
 @docs fuzz, fuzz2, fuzz3
@@ -56,8 +62,10 @@ module Test.Runner.Effectful exposing
 import Expect exposing (Expectation)
 import Fuzz exposing (Fuzzer)
 import Init
-import Node 
+import Node
 import Random
+import Bytes exposing (Bytes)
+import Stream
 import Task exposing (Task)
 import Terminal
 import Test
@@ -66,10 +74,40 @@ import Test.Runner.Node
 import Time
 
 
-{-| Type alias for a program that runs your effectful test suite.
+-- CONFIG
+
+
+{-| Configuration for the test runner. You can get this from
+[`initialize`](#initialize) as part of your application's init, or if you want
+fine-grained control over what the package has access to, you can create it
+yourself.
 -}
-type alias Program a =
-    Node.SimpleProgram a
+type alias Config =
+    { termConfig : Maybe Terminal.Configuration
+    , stdout : Stream.Writable Bytes
+    , stderr : Stream.Writable Bytes
+    }
+
+
+{-| A convenience function that acquires Terminal permission and packages
+stdout/stderr from the environment into a [Config](#Config).
+
+**Note:** This gives unlimited subsystem permissions to the package.
+If you want more control, create your own `Config` record instead.
+
+    Node.defineSimpleProgram <| \env ->
+        Effectful.initialize env <| \config ->
+            Effectful.run config myTests
+                |> Node.endSimpleProgram
+-}
+initialize : Node.Environment -> (Config -> Init.Task a) -> Init.Task a
+initialize env callback =
+    Init.await Terminal.initialize <| \termConfig ->
+        callback
+            { termConfig = termConfig
+            , stdout = env.stdout
+            , stderr = env.stderr
+            }
 
 
 -- TESTS
@@ -78,7 +116,7 @@ type alias Program a =
 {-| A test in an effectful test suite.
 
 They can be created with [test](#test), [fuzz](#fuzz), or several other functions in this module:
-    
+
     import Expect
     import Test.Runner.Effectful exposing (test)
 
@@ -87,7 +125,7 @@ They can be created with [test](#test), [fuzz](#fuzz), or several other function
 
 The semantics are the same as a test from the
 [core test package](https://packages.gren-lang.org/package/gren-lang/test/version/latest/module/Test#test),
-except they can wrapped in one or more [await](#await) or [awaitError](#awaitError) calls to verify the outcome a 
+except they can wrapped in one or more [await](#await) or [awaitError](#awaitError) calls to verify the outcome of a
 [Task](https://packages.gren-lang.org/package/gren-lang/core/version/latest/module/Task):
 
     import Expect
@@ -167,8 +205,8 @@ await : String -> Task error a -> (a -> Test) -> Test
 await description task callback =
     task
         |> Task.map NotReady
-        |> Task.onError 
-            (\e -> 
+        |> Task.onError
+            (\e ->
                 (\_ -> Expect.fail (Debug.toString e))
                     |> Test.test "Task failed with:"
                     |> Ready
@@ -191,8 +229,8 @@ These can be nested just like (and alongside) [await](#await) calls.
 awaitError : String -> Task error a -> (error -> Test) -> Test
 awaitError description task callback =
     task
-        |> Task.andThen 
-            (\a -> 
+        |> Task.andThen
+            (\a ->
                 (\_ -> Expect.fail (Debug.toString a))
                     |> Test.test "Expected error, but got a non-error value:"
                     |> Ready
@@ -226,45 +264,43 @@ wrapDescription description internalTest =
 
 {-| Run your effectful test suite.
 
-The result of this function should be passed to 
-[Node.defineSimpleProgram](https://packages.gren-lang.org/package/gren-lang/node/version/latest/module/Node#defineSimpleProgram)
-as part of your `main` function:
+Returns a `Task` that outputs test results and sets the exit code.
+Run it like any other task. For example, in a 
+[`Node.SimpleProgram`](https://packages.gren-lang.org/package/gren-lang/node/version/latest/module/Node#SimpleProgram):
 
     main =
         Node.defineSimpleProgram <| \env ->
-            run env <|
-                await "my task" (Task.succeed "hi") <| \val ->
-                    test "says hi" <| \_ ->
-                        Expect.equal "hi" val
+            Effectful.initialize env <| \config ->
+                Node.endSimpleProgram (Effectful.run config myTests)
 
 -}
-run : Node.Environment -> Test -> Init.Task (Cmd a)
-run env t =
-    Init.awaitTask Time.now <| \time ->
-        let
-            options =
+run : Config -> Test -> Task Never {}
+run config test_ =
+    Time.now
+        |> Task.andThen (\time ->
+            runWithOptions config
                 { runs = 100
                 , seed = Random.initialSeed (Time.posixToMillis time)
                 }
-        in
-        runWithOptions env options t
+                test_
+        )
 
 
 {-| Customize a test run with [Options](#Options).
 -}
-runWithOptions : Node.Environment -> Options -> Test -> Init.Task (Cmd a)
-runWithOptions env options test_ =
-    Init.await Terminal.initialize <| \termConfig ->
-    Init.awaitTask test_ <| \t ->
-        Node.endSimpleProgram <|
+runWithOptions : Config -> Options -> Test -> Task Never {}
+runWithOptions config options test_ =
+    test_
+        |> Task.andThen (\t ->
             Log.run
                 { test = unwrap t
                 , runs = options.runs
-                , passStream = env.stdout
-                , failStream = env.stderr
-                , colorDepth = getColorDepth termConfig 
+                , passStream = config.stdout
+                , failStream = config.stderr
+                , colorDepth = getColorDepth config.termConfig
                 , seed = options.seed
                 }
+        )
 
 
 {-| Options to customize your test run.
@@ -282,7 +318,7 @@ type alias Options =
 
 
 {-| Group an array of [Test](#Test)s into one.
-    
+
     concat
         [ test "true is true" <| \_ ->
             Expect.equal True True

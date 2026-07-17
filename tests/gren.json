@@ -4,7 +4,7 @@
     "source-directories": [
         "src"
     ],
-    "gren-version": "0.6.3",
+    "gren-version": "0.6.6",
     "dependencies": {
         "direct": {
             "gren-lang/core": "7.0.1",
@@ -13,6 +13,7 @@
             "blaix/gren-effectful-tests": "local:.."
         },
         "indirect": {
+            "blaix/gren-base64": "2.0.2",
             "gren-lang/test-runner-node": "7.0.0",
             "gren-lang/url": "6.0.0"
         }
