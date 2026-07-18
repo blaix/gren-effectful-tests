@@ -1,3 +1,13 @@
+## 7.0.1 (2026-07-18)
+
+* Update CHANGELOG (forgot to add changes for the 7.0.0 release, oops!)
+
+## 7.0.0 (2026-07-17)
+
+* Swap order of task and description so description is first for await functions.
+* Decouple from Node.SimpleProgram. `run` now returns a normal `Task`.
+* Add `Test.Runner.Browser` for automated browser tests.
+
 ## 6.0.0 (2025-09-23)
 
 * Swap arguments for await so description comes first (reads more like describe and easier to format long task chains)
